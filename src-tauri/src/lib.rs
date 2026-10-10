@@ -1,4 +1,5 @@
 pub mod collector;
+pub mod installer;
 pub mod packs;
 pub mod state;
 
