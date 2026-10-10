@@ -5,6 +5,7 @@ use crate::state::store::AgentView;
 use crate::windows::manager::save_position;
 use crate::App;
 use base64::Engine;
+use std::path::{Component, Path};
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -15,15 +16,25 @@ pub struct Status { pub hooks_installed: bool, pub poll_error: Option<String>, p
 #[tauri::command]
 pub fn get_manifest(app: State<Arc<App>>) -> Manifest { app.manifest.lock().unwrap().clone() }
 
+/// True if `s` is exactly one plain path component (no separators, `..`, root or prefix).
+fn is_single_normal(s: &str) -> bool {
+    let mut c = Path::new(s).components();
+    matches!((c.next(), c.next()), (Some(Component::Normal(n)), None) if n == s)
+}
+
 #[tauri::command]
 pub fn get_pack_url(app: State<Arc<App>>, sheet: String) -> Result<String, String> {
+    if !is_single_normal(&sheet) { return Err(format!("invalid sheet name: {sheet}")); }
+    if !app.manifest.lock().unwrap().animations.values().any(|a| a.sheet == sheet) {
+        return Err(format!("sheet not in current pack: {sheet}"));
+    }
     let pack = app.config.lock().unwrap().pack.clone();
     let path = app.packs_root.join(&pack).join(&sheet);
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     Ok(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
     let store = app.store.lock().unwrap();
     let Some(view) = store.views(Instant::now()).into_iter().find(|v| v.key == key) else { return };
@@ -59,8 +70,15 @@ pub fn list_pack_names(app: State<Arc<App>>) -> Vec<String> { list_packs(&app.pa
 
 #[tauri::command]
 pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result<(), String> {
+    if !is_single_normal(&name) || !list_packs(&app.packs_root).contains(&name) {
+        return Err(format!("unknown pack: {name}"));
+    }
     let m = load_pack(&app.packs_root.join(&name)).map_err(|e| e.to_string())?;
-    { let mut cfg = app.config.lock().unwrap(); cfg.pack = name; let _ = cfg.save(&config_path()); }
+    {
+        let mut cfg = app.config.lock().unwrap();
+        cfg.pack = name;
+        if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
+    }
     *app.manifest.lock().unwrap() = m.clone();
     for (label, w) in handle.webview_windows() {
         if label.starts_with("sprite-") { let _ = w.emit("manifest", &m); }
