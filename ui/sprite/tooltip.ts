@@ -20,5 +20,13 @@ export function fmtSince(s: number): string {
 export function render(el: HTMLElement, v: AgentView, sinceOffset: number) {
   const detail = v.visible === "needs_input" && v.waiting_for ? ` (${v.waiting_for})`
                : v.visible === "waiting_peer" && v.peer ? ` → ${v.peer}` : "";
-  el.innerHTML = `<b>${v.name}</b><br>${shortCwd(v.cwd)}<br>${LABEL[v.visible] ?? v.visible}${detail} · ${fmtSince(v.since_secs + sinceOffset)}`;
+  const b = document.createElement("b");
+  b.textContent = v.name;
+  el.replaceChildren(
+    b,
+    document.createElement("br"),
+    document.createTextNode(shortCwd(v.cwd)),
+    document.createElement("br"),
+    document.createTextNode(`${LABEL[v.visible] ?? v.visible}${detail} · ${fmtSince(v.since_secs + sinceOffset)}`),
+  );
 }
