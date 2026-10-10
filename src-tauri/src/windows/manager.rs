@@ -1,6 +1,7 @@
 use crate::packs::Manifest;
 use crate::state::store::{AgentView, Change};
 use crate::windows::positions::{Pos, Positions};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub fn label_for(key: &str) -> String { format!("sprite-{}", key.replace([':', '/', '.'], "_")) }
@@ -10,7 +11,7 @@ fn window_size(m: &Manifest) -> (f64, f64) {
     ((w * m.scale) as f64, (h * m.scale) as f64 + 56.0) // 56px for tooltip below the sprite
 }
 
-pub fn apply_changes(app: &AppHandle, changes: &[Change], manifest: &Manifest, positions: &mut Positions) {
+pub fn apply_changes(app: &AppHandle, changes: &[Change], manifest: &Manifest, positions: &Mutex<Positions>) {
     for ch in changes {
         match ch {
             Change::Added(v) => { ensure_window(app, v, manifest, positions); push_state(app, v); }
@@ -26,16 +27,19 @@ fn push_state(app: &AppHandle, v: &AgentView) {
     if let Some(w) = app.get_webview_window(&label_for(&v.key)) { let _ = w.emit("agent-state", v); }
 }
 
-fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions: &mut Positions) {
+// Never hold the positions lock across calls that wait on the main thread
+// (primary_monitor, build): main-thread commands may be waiting on that lock.
+fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions: &Mutex<Positions>) {
     let label = label_for(&v.key);
     if app.get_webview_window(&label).is_some() { return; }
     let (w, h) = window_size(manifest);
-    let pos = positions.get(&v.host, &v.name).unwrap_or_else(|| {
+    let saved = positions.lock().unwrap().get(&v.host, &v.name);
+    let pos = saved.unwrap_or_else(|| {
         let (sw, sh) = app.primary_monitor().ok().flatten()
             .map(|m| { let s = m.size(); let f = m.scale_factor(); ((s.width as f64 / f) as i32, (s.height as f64 / f) as i32) })
             .unwrap_or((1440, 900));
         let index = app.webview_windows().keys().filter(|k| k.starts_with("sprite-")).count();
-        positions.cascade(index, sw, sh, w as i32, h as i32)
+        positions.lock().unwrap().cascade(index, sw, sh, w as i32, h as i32)
     });
     let url = WebviewUrl::App(format!("sprite/index.html?key={}", urlencoding(&v.key)).into());
     let built = WebviewWindowBuilder::new(app, &label, url)

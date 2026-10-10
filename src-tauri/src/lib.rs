@@ -10,7 +10,7 @@ pub mod windows;
 use collector::event::AgentEvent;
 use config::{config_path, positions_path, Config};
 use packs::{load_pack, Manifest};
-use state::store::Store;
+use state::store::{Change, Store};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -44,13 +44,17 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(move |app| {
             let handle = app.handle().clone();
-            let cfg = Config::load(&config_path());
+            let mut cfg = Config::load(&config_path());
             let _ = cfg.save(&config_path());
             let root = packs_root(&handle);
-            let manifest = load_pack(&root.join(&cfg.pack)).or_else(|e| {
-                log::warn!("pack {} invalid ({e}), falling back to default", cfg.pack);
-                load_pack(&root.join("default"))
-            }).expect("default pack must be valid");
+            let manifest = match load_pack(&root.join(&cfg.pack)) {
+                Ok(m) => m,
+                Err(e) => {
+                    log::warn!("pack {} invalid ({e}), falling back to default", cfg.pack);
+                    cfg.pack = "default".to_string();
+                    load_pack(&root.join("default")).expect("default pack must be valid")
+                }
+            };
             let host = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or_else(|_| "local".into());
 
             let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
@@ -83,19 +87,11 @@ pub fn run() {
                     tokio::select! {
                         Some(ev) = rx.recv() => {
                             let changes = st.store.lock().unwrap().apply(&ev);
-                            if !changes.is_empty() {
-                                let m = st.manifest.lock().unwrap().clone();
-                                windows::manager::apply_changes(&handle, &changes, &m, &mut st.positions.lock().unwrap());
-                                notify_settings(&handle, &st);
-                            }
+                            mirror(&handle, &st, changes);
                         }
                         _ = sweep.tick() => {
                             let changes = st.store.lock().unwrap().sweep(Instant::now());
-                            if !changes.is_empty() {
-                                let m = st.manifest.lock().unwrap().clone();
-                                windows::manager::apply_changes(&handle, &changes, &m, &mut st.positions.lock().unwrap());
-                                notify_settings(&handle, &st);
-                            }
+                            mirror(&handle, &st, changes);
                         }
                     }
                 }
@@ -110,13 +106,24 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building buddy")
         .run(|_app, event| {
-            // keep running with no windows (tray app)
-            if let tauri::RunEvent::ExitRequested { api, .. } = event { api.prevent_exit(); }
+            // keep running with no windows (tray app); an explicit app.exit(code) still quits
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                if code.is_none() { api.prevent_exit(); }
+            }
         });
+}
+
+/// Mirror store changes into sprite windows and refresh the settings window.
+fn mirror(handle: &tauri::AppHandle, st: &Arc<App>, changes: Vec<Change>) {
+    if changes.is_empty() { return; }
+    let m = st.manifest.lock().unwrap().clone();
+    windows::manager::apply_changes(handle, &changes, &m, &st.positions);
+    notify_settings(handle, st);
 }
 
 fn notify_settings(handle: &tauri::AppHandle, st: &Arc<App>) {
     if let Some(w) = handle.get_webview_window("settings") {
-        let _ = w.emit("agents", st.store.lock().unwrap().views(Instant::now()));
+        let views = st.store.lock().unwrap().views(Instant::now());
+        let _ = w.emit("agents", views);
     }
 }
