@@ -9,11 +9,14 @@ pub struct Config {
     pub token: String,
     pub pack: String,
     pub bind_all: bool,
+    /// Absolute path to the `claude` binary; overrides PATH lookup (GUI apps get a minimal PATH).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_path: Option<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false }
+        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, claude_path: None }
     }
 }
 
@@ -82,6 +85,17 @@ mod tests {
         let p = d.path().join("config.json");
         std::fs::write(&p, "nope").unwrap();
         assert_eq!(Config::load(&p).port, 7433);
+    }
+    #[test] fn claude_path_is_optional_and_roundtrips() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("config.json");
+        std::fs::write(&p, r#"{"port":7433,"token":"0123456789abcdef0123456789abcdef","pack":"default","bind_all":false}"#).unwrap();
+        let mut c = Config::load(&p);
+        assert_eq!(c.token, "0123456789abcdef0123456789abcdef", "old config without claude_path still loads");
+        assert_eq!(c.claude_path, None);
+        c.claude_path = Some("/opt/claude".into());
+        c.save(&p).unwrap();
+        assert_eq!(Config::load(&p).claude_path.as_deref(), Some("/opt/claude"));
     }
     #[test] fn urls_and_bind() {
         let mut c = Config::load(std::path::Path::new("/nonexistent/x.json"));

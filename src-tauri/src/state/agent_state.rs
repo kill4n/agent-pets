@@ -29,9 +29,12 @@ pub struct AgentState {
     pub missed_polls: u8,
 }
 
+/// Name shown until the poller reports the real one: the first 8 chars of the session id.
+pub fn provisional_name(session_id: &str) -> String { session_id.chars().take(8).collect() }
+
 impl AgentState {
     pub fn new(id: AgentId, now: Instant) -> Self {
-        let name = id.session_id.chars().take(8).collect();
+        let name = provisional_name(&id.session_id);
         Self { id, name, cwd: None, visible: Visible::Idle, waiting_for: None, peer: None,
             subagents: 0, sent_message: false, since: now, last_hook_at: None, last_seen: now, missed_polls: 0 }
     }

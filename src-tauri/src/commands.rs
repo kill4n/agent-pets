@@ -2,19 +2,23 @@ use crate::config::{config_path, Config};
 use crate::installer;
 use crate::packs::{list_packs, load_pack, Manifest};
 use crate::state::store::AgentView;
-use crate::windows::manager::save_position;
+use crate::state::agent_state::provisional_name;
+use crate::windows::manager::{label_for, save_position};
 use crate::App;
 use base64::Engine;
 use std::path::{Component, Path};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, State};
 
 #[derive(serde::Serialize)]
-pub struct Status { pub hooks_installed: bool, pub poll_error: Option<String>, pub hook_url: String, pub token: String, pub pack: String }
+pub struct Status {
+    pub hooks_installed: bool, pub poll_error: Option<String>, pub server_error: Option<String>,
+    pub pack_warning: Option<String>, pub hook_url: String, pub token: String, pub pack: String,
+}
 
 #[tauri::command]
-pub fn get_manifest(app: State<Arc<App>>) -> Manifest { app.manifest.lock().unwrap().clone() }
+pub fn get_manifest(app: State<Arc<App>>) -> Option<Manifest> { app.manifest.lock().unwrap().clone() }
 
 /// True if `s` is exactly one plain path component (no separators, `..`, root or prefix).
 fn is_single_normal(s: &str) -> bool {
@@ -25,7 +29,8 @@ fn is_single_normal(s: &str) -> bool {
 #[tauri::command]
 pub fn get_pack_url(app: State<Arc<App>>, sheet: String) -> Result<String, String> {
     if !is_single_normal(&sheet) { return Err(format!("invalid sheet name: {sheet}")); }
-    if !app.manifest.lock().unwrap().animations.values().any(|a| a.sheet == sheet) {
+    let in_pack = app.manifest.lock().unwrap().as_ref().is_some_and(|m| m.animations.values().any(|a| a.sheet == sheet));
+    if !in_pack {
         return Err(format!("sheet not in current pack: {sheet}"));
     }
     let pack = app.config.lock().unwrap().pack.clone();
@@ -36,9 +41,12 @@ pub fn get_pack_url(app: State<Arc<App>>, sheet: String) -> Result<String, Strin
 
 #[tauri::command(async)]
 pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
-    let store = app.store.lock().unwrap();
-    let Some(view) = store.views(Instant::now()).into_iter().find(|v| v.key == key) else { return };
+    let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key);
+    let Some(view) = view else { return };
+    // the provisional session_id[:8] name is throwaway: saving under it would never be found again
+    if view.name == provisional_name(&view.session_id) { return; }
     save_position(&mut app.positions.lock().unwrap(), &view.host, &view.name, x, y);
+    app.placement.lock().unwrap().mark_dragged(&label_for(&key));
 }
 
 #[tauri::command]
@@ -50,7 +58,8 @@ pub fn get_status(app: State<Arc<App>>) -> Status {
     let settings = std::fs::read_to_string(installer::default_settings_path()).ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
     Status { hooks_installed: installer::is_installed(&settings, &cfg.hook_url()),
-             poll_error: app.poll_error.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack }
+             poll_error: app.poll_error.borrow().clone(), server_error: app.server_error.borrow().clone(),
+             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack }
 }
 
 #[tauri::command]
@@ -79,9 +88,10 @@ pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result
         cfg.pack = name;
         if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
     }
-    *app.manifest.lock().unwrap() = m.clone();
-    for (label, w) in handle.webview_windows() {
-        if label.starts_with("sprite-") { let _ = w.emit("manifest", &m); }
+    *app.manifest.lock().unwrap() = Some(m.clone());
+    app.pack_warning.send_replace(None);
+    for label in handle.webview_windows().into_keys() {
+        if label.starts_with("sprite-") { let _ = handle.emit_to(EventTarget::webview_window(label), "manifest", &m); }
     }
     Ok(())
 }

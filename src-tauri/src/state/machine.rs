@@ -23,7 +23,8 @@ pub fn apply_hook(s: &mut AgentState, h: &HookEvent, now: Instant) {
 
     let base = match h.event.as_str() {
         "UserPromptSubmit" => {
-            s.sent_message = false; s.peer = None; s.waiting_for = None;
+            // a new turn: any subagent whose SubagentStop was lost (Esc, dropped hook) is over
+            s.sent_message = false; s.peer = None; s.waiting_for = None; s.subagents = 0;
             Visible::Working
         }
         "PreToolUse" => Visible::Working,
@@ -79,7 +80,11 @@ pub fn apply_poll(s: &mut AgentState, p: &PolledAgent, now: Instant) {
             s.waiting_for = None;
             Visible::Working
         }
-        (_, Some(PollStatus::Idle), _) => if s.sent_message { Visible::WaitingPeer } else { Visible::Idle },
+        (_, Some(PollStatus::Idle), _) => {
+            // idle with no recent hook: a lost SubagentStop must not pin the sprite in Delegating
+            s.subagents = 0;
+            if s.sent_message { Visible::WaitingPeer } else { Visible::Idle }
+        }
         _ => s.visible,
     };
     s.set_visible(effective(s, base), now);
@@ -164,6 +169,31 @@ mod tests {
         assert_eq!(s.visible, Visible::Delegating);
         apply_hook(&mut s, &hook("SubagentStop"), now);
         assert_eq!(s.visible, Visible::Working);
+    }
+
+    #[test] fn prompt_submit_resets_lost_subagents() {
+        let (mut s, now) = fresh();
+        apply_hook(&mut s, &hook("UserPromptSubmit"), now);
+        apply_hook(&mut s, &hook("SubagentStart"), now);
+        assert_eq!(s.visible, Visible::Delegating);
+        // user hits Esc: no SubagentStop/Stop arrive; the next prompt starts clean
+        apply_hook(&mut s, &hook("UserPromptSubmit"), now + Duration::from_secs(30));
+        assert_eq!(s.subagents, 0);
+        assert_eq!(s.visible, Visible::Working);
+        apply_hook(&mut s, &hook("Stop"), now + Duration::from_secs(31));
+        assert_eq!(s.visible, Visible::Idle);
+    }
+
+    #[test] fn poll_idle_outside_hook_window_resets_subagents() {
+        let (mut s, now) = fresh();
+        apply_hook(&mut s, &hook("UserPromptSubmit"), now);
+        apply_hook(&mut s, &hook("SubagentStart"), now);
+        apply_poll(&mut s, &polled(Some(PollStatus::Idle)), now + Duration::from_secs(2));
+        assert_eq!(s.visible, Visible::Delegating, "within the hook window the hook state wins");
+        assert_eq!(s.subagents, 1);
+        apply_poll(&mut s, &polled(Some(PollStatus::Idle)), now + Duration::from_secs(6));
+        assert_eq!(s.subagents, 0);
+        assert_eq!(s.visible, Visible::Idle);
     }
 
     #[test] fn subagent_stop_without_start_saturates_at_zero() {
