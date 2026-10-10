@@ -35,6 +35,8 @@ async function doLoadManifest(m: Manifest) {
   const [fw, fh] = m.frameSize;
   canvas.width = fw; canvas.height = fh;
   canvas.style.width = `${fw * m.scale}px`; canvas.style.height = `${fh * m.scale}px`;
+  // the speech bubble sits right above the sprite; tell CSS how tall the sprite is
+  document.documentElement.style.setProperty("--sprite-h", `${fh * m.scale}px`);
   sheets = new Map();
   for (const a of Object.values(m.animations)) {
     if (sheets.has(a.sheet)) continue;
