@@ -3,7 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type { AgentView } from "../shared/types";
 
-interface Status { hooks_installed: boolean; poll_error: string | null; hook_url: string; token: string; pack: string }
+interface Status {
+  hooks_installed: boolean; poll_error: string | null; server_error: string | null; pack_warning: string | null;
+  hook_url: string; token: string; pack: string;
+}
 
 const app = document.getElementById("app")!;
 let status: Status; let agents: AgentView[] = []; let packs: string[] = []; let autostart = false;
@@ -63,9 +66,12 @@ function render() {
       " ", hooksBtn),
     el("p", "Poll: ", {},
       status.poll_error ? el("span", `⚠ ${status.poll_error}`, { class: "warn" }) : el("span", "ok", { class: "ok" })),
-    el("p", "Servidor: ", {}, el("code", status.hook_url), el("br"), "Token: ", el("code", status.token)),
+    el("p", "Servidor: ", {}, el("code", status.hook_url), " ",
+      status.server_error ? el("span", `⚠ ${status.server_error}`, { class: "warn" }) : el("span", "ok", { class: "ok" }),
+      el("br"), "Token: ", el("code", status.token)),
     el("h2", "Sprites"),
     el("label", "Pack ", {}, packSel),
+    ...(status.pack_warning ? [el("p", `⚠ ${status.pack_warning}`, { class: "warn" })] : []),
     el("h2", "Sistema"),
     el("label", undefined, {}, auto, " Arrancar al iniciar sesión"),
     el("h2", `Agentes (${agents.length})`),
