@@ -1,6 +1,6 @@
 use super::machine::{apply_hook, apply_poll, mark_missed};
 use super::{AgentId, AgentState, Visible};
-use crate::collector::event::{AgentEvent, EventKind};
+use crate::collector::event::{AgentEvent, EventKind, PollKind, PollState};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -78,6 +78,11 @@ impl Store {
                 for p in list {
                     if p.session_id.is_empty() { continue; }
                     let id = AgentId { host: ev.host.clone(), session_id: p.session_id.clone() };
+                    // `--all` keeps listing finished background agents: never (re)create one that is
+                    // already terminal, or it would come back as a phantom gone window after each sweep.
+                    let terminal = p.kind == PollKind::Background
+                        && matches!(p.state, Some(PollState::Done | PollState::Failed | PollState::Stopped));
+                    if terminal && !self.agents.contains_key(&id.key()) { continue; }
                     seen.insert(id.key());
                     changes.extend(self.upsert(id, now, |s| apply_poll(s, p, now)));
                 }
@@ -167,6 +172,33 @@ mod tests {
         st.apply(&hook_ev("s1", "SessionEnd", None));
         let ch = st.apply(&hook_ev("s1", "UserPromptSubmit", None));
         assert!(matches!(&ch[0], Change::Updated(v) if v.visible == Visible::Working));
+    }
+
+    fn bg_snap(sid: &str, state: PollState) -> AgentEvent {
+        AgentEvent { host: "h".into(), session_id: String::new(), at: Instant::now(),
+            kind: EventKind::Snapshot(vec![PolledAgent { session_id: sid.into(), name: Some("job".into()), cwd: None,
+                kind: PollKind::Background, status: None, waiting_for: None, state: Some(state) }]) }
+    }
+
+    #[test] fn finished_background_agent_is_not_recreated_after_sweep() {
+        let mut st = Store::new();
+        let ch = st.apply(&bg_snap("bg1", PollState::Working));
+        assert!(matches!(&ch[0], Change::Added(v) if v.visible == Visible::Working));
+        let ch = st.apply(&bg_snap("bg1", PollState::Done));
+        assert!(matches!(&ch[0], Change::Updated(v) if v.visible == Visible::Gone));
+        let ch = st.sweep(Instant::now() + Duration::from_secs(11));
+        assert!(matches!(&ch[0], Change::Removed(k) if k == "h:bg1"));
+        let ch = st.apply(&bg_snap("bg1", PollState::Done));
+        assert!(!ch.iter().any(|c| matches!(c, Change::Added(_))), "no phantom re-add: {ch:?}");
+        assert!(st.views(Instant::now()).is_empty());
+    }
+
+    #[test] fn unknown_terminal_background_agent_is_ignored_at_startup() {
+        let mut st = Store::new();
+        for state in [PollState::Done, PollState::Failed, PollState::Stopped] {
+            assert!(st.apply(&bg_snap("old", state)).is_empty());
+        }
+        assert!(st.views(Instant::now()).is_empty());
     }
 
     #[test] fn snapshot_events_do_not_create_agent_from_empty_session_id() {

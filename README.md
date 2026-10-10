@@ -20,6 +20,12 @@ Revisión visual sin Claude Code: `npm run dev` y abre
    Esto añade hooks `http` a `~/.claude/settings.json` (copia previa en `settings.json.buddy-backup`).
 2. Cada sesión de Claude Code aparece como un sprite. Arrástralo donde quieras; la posición se recuerda.
 3. Click en el sprite: nombre, carpeta, estado.
+4. Si Buddy no encuentra `claude` (al abrirlo desde Finder, el Dock o al iniciar sesión el `PATH` es mínimo),
+   indica la ruta del binario. Orden de búsqueda: `claude_path` en
+   `~/Library/Application Support/dev.kill4n.codepets/config.json` (p. ej. `"claude_path": "/Users/yo/.local/bin/claude"`),
+   la variable de entorno `BUDDY_CLAUDE_BIN`, `command -v claude` en tu shell de login y las rutas habituales
+   (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.claude/local`, `~/.npm-global/bin`).
+   Los avisos (poll, servidor de hooks, pack) aparecen en Ajustes y en el tooltip del icono de la bandeja.
 
 ## Packs de sprites
 `assets/packs/<nombre>/pack.json` + PNG. Seis animaciones obligatorias: `working`, `idle`,
