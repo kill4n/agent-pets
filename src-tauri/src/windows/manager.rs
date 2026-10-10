@@ -9,14 +9,14 @@ use tauri::{AppHandle, Emitter, EventTarget, LogicalPosition, Manager, WebviewUr
 
 pub fn label_for(key: &str) -> String { format!("sprite-{}", key.replace([':', '/', '.'], "_")) }
 
-/// Minimum window width so the tooltip (name, folder, state + reason/peer + time) fits.
+/// Minimum window width so the speech bubble (name, folder, state + reason/peer + time) fits.
 pub const MIN_WINDOW_W: f64 = 220.0;
-/// Room below the sprite for the (wrapping) tooltip.
-pub const TOOLTIP_H: f64 = 84.0;
+/// Room above the sprite for the speech bubble and its tail.
+pub const BUBBLE_H: f64 = 84.0;
 
 pub fn window_size(m: &Manifest) -> (f64, f64) {
     let [w, h] = m.frame_size;
-    (((w * m.scale) as f64).max(MIN_WINDOW_W), (h * m.scale) as f64 + TOOLTIP_H)
+    (((w * m.scale) as f64).max(MIN_WINDOW_W), (h * m.scale) as f64 + BUBBLE_H)
 }
 
 /// Per-window bookkeeping for applying the saved `host+name` position once the real name is known.
@@ -173,9 +173,10 @@ mod tests {
         })).unwrap()
     }
 
-    #[test] fn window_is_at_least_tooltip_wide() {
+    #[test] fn window_is_at_least_bubble_wide_and_reserves_bubble_height() {
         assert_eq!(window_size(&manifest(32, 4)).0, MIN_WINDOW_W);
         assert_eq!(window_size(&manifest(64, 4)).0, 256.0);
-        assert_eq!(window_size(&manifest(32, 4)).1, 128.0 + TOOLTIP_H);
+        assert_eq!(window_size(&manifest(32, 4)).1, 128.0 + BUBBLE_H);
+        assert_eq!(window_size(&manifest(64, 2)).1, 128.0 + 84.0);
     }
 }
