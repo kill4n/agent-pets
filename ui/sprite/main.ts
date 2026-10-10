@@ -93,7 +93,10 @@ async function main() {
     return;
   }
   let gotEvent = false;
-  await listen<AgentView>("agent-state", (e) => { gotEvent = true; setView(e.payload); });
+  await listen<AgentView>("agent-state", (e) => {
+    if (e.payload.key !== key) return; // defence in depth: only this window's agent
+    gotEvent = true; setView(e.payload);
+  });
   await listen<Manifest>("manifest", (e) => { loadManifest(e.payload); });
   const w = getCurrentWindow();
   let moveTimer: number | undefined;
@@ -107,7 +110,9 @@ async function main() {
       } catch (err) { console.warn("report_position failed", err); }
     }, 300);
   });
-  await loadManifest(await invoke<Manifest>("get_manifest"));
+  // null when no valid pack is installed: stay blank until set_pack emits "manifest"
+  const m = await invoke<Manifest | null>("get_manifest");
+  if (m) await loadManifest(m);
   const agents = await invoke<AgentView[]>("list_agents");
   const mine = agents.find((a) => a.key === key);
   if (mine && !gotEvent) setView(mine);
