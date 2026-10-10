@@ -1,0 +1,188 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::time::Instant;
+
+#[derive(Debug, Clone)]
+pub struct AgentEvent {
+    pub host: String,
+    pub session_id: String,
+    pub kind: EventKind,
+    pub at: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub enum EventKind {
+    Hook(HookEvent),
+    Snapshot(Vec<PolledAgent>),
+}
+
+#[derive(Debug, Clone)]
+pub struct HookEvent {
+    pub event: String,
+    pub cwd: Option<PathBuf>,
+    pub tool_name: Option<String>,
+    pub notification_type: Option<String>,
+    pub recipient: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PollStatus { Busy, Waiting, Idle, #[serde(other)] Unknown }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PollState { Working, Blocked, Done, Failed, Stopped, #[serde(other)] Unknown }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PollKind { Interactive, Background, #[default] #[serde(other)] Unknown }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolledAgent {
+    pub session_id: String,
+    pub name: Option<String>,
+    pub cwd: Option<PathBuf>,
+    #[serde(default)]
+    pub kind: PollKind,
+    pub status: Option<PollStatus>,
+    pub waiting_for: Option<String>,
+    pub state: Option<PollState>,
+}
+
+#[derive(Debug)]
+pub enum ParseError { MissingField(&'static str), Json(serde_json::Error) }
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::MissingField(n) => write!(f, "missing field {n}"),
+            ParseError::Json(e) => write!(f, "json: {e}"),
+        }
+    }
+}
+impl std::error::Error for ParseError {}
+impl From<serde_json::Error> for ParseError { fn from(e: serde_json::Error) -> Self { ParseError::Json(e) } }
+
+pub fn parse_hook(host: &str, body: &serde_json::Value) -> Result<AgentEvent, ParseError> {
+    let session_id = body.get("session_id").and_then(|v| v.as_str())
+        .ok_or(ParseError::MissingField("session_id"))?.to_string();
+    let event = body.get("hook_event_name").and_then(|v| v.as_str())
+        .ok_or(ParseError::MissingField("hook_event_name"))?.to_string();
+    let str_field = |k: &str| body.get(k).and_then(|v| v.as_str()).map(str::to_string);
+    let tool_name = str_field("tool_name");
+    let recipient = if tool_name.as_deref() == Some("SendMessage") {
+        body.pointer("/tool_input/to").and_then(|v| v.as_str()).map(str::to_string)
+    } else { None };
+    Ok(AgentEvent {
+        host: host.to_string(),
+        session_id,
+        kind: EventKind::Hook(HookEvent {
+            event,
+            cwd: str_field("cwd").map(PathBuf::from),
+            tool_name,
+            notification_type: str_field("notification_type"),
+            recipient,
+        }),
+        at: Instant::now(),
+    })
+}
+
+pub fn parse_snapshot(host: &str, body: &str) -> Result<AgentEvent, ParseError> {
+    let raw: Vec<serde_json::Value> = serde_json::from_str(body)?;
+    let agents = raw.into_iter()
+        .filter_map(|v| serde_json::from_value::<PolledAgent>(v).ok())
+        .collect();
+    Ok(AgentEvent { host: host.to_string(), session_id: String::new(),
+        kind: EventKind::Snapshot(agents), at: Instant::now() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn hook_minimal_fields() {
+        let body = json!({"session_id":"abc","cwd":"/tmp/p","hook_event_name":"Stop"});
+        let ev = parse_hook("mac", &body).unwrap();
+        assert_eq!(ev.session_id, "abc");
+        assert_eq!(ev.host, "mac");
+        match ev.kind {
+            EventKind::Hook(h) => {
+                assert_eq!(h.event, "Stop");
+                assert_eq!(h.cwd.unwrap().to_str().unwrap(), "/tmp/p");
+                assert!(h.tool_name.is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn hook_sendmessage_extracts_recipient() {
+        let body = json!({"session_id":"abc","hook_event_name":"PostToolUse",
+            "tool_name":"SendMessage","tool_input":{"to":"buddy-12","message":"hi"}});
+        let ev = parse_hook("mac", &body).unwrap();
+        let EventKind::Hook(h) = ev.kind else { panic!() };
+        assert_eq!(h.tool_name.as_deref(), Some("SendMessage"));
+        assert_eq!(h.recipient.as_deref(), Some("buddy-12"));
+    }
+
+    #[test]
+    fn hook_notification_type() {
+        let body = json!({"session_id":"abc","hook_event_name":"Notification",
+            "notification_type":"permission_prompt","message":"x"});
+        let EventKind::Hook(h) = parse_hook("mac", &body).unwrap().kind else { panic!() };
+        assert_eq!(h.notification_type.as_deref(), Some("permission_prompt"));
+    }
+
+    #[test]
+    fn hook_without_session_id_is_error() {
+        assert!(parse_hook("mac", &json!({"hook_event_name":"Stop"})).is_err());
+    }
+
+    #[test]
+    fn hook_without_event_name_is_error() {
+        assert!(parse_hook("mac", &json!({"session_id":"a"})).is_err());
+    }
+
+    #[test]
+    fn snapshot_parses_interactive_and_background() {
+        let body = r#"[
+          {"pid":1,"cwd":"/a","kind":"interactive","startedAt":1,"sessionId":"s1","name":"n1","status":"busy"},
+          {"id":"x","cwd":"/b","kind":"background","startedAt":2,"sessionId":"s2","name":"n2","state":"blocked"},
+          {"cwd":"/c","kind":"interactive","sessionId":"s3","name":"n3","status":"waiting","waitingFor":"permission prompt"}
+        ]"#;
+        let ev = parse_snapshot("mac", body).unwrap();
+        let EventKind::Snapshot(list) = ev.kind else { panic!() };
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].status, Some(PollStatus::Busy));
+        assert_eq!(list[0].kind, PollKind::Interactive);
+        assert_eq!(list[1].state, Some(PollState::Blocked));
+        assert_eq!(list[1].kind, PollKind::Background);
+        assert_eq!(list[2].waiting_for.as_deref(), Some("permission prompt"));
+    }
+
+    #[test]
+    fn snapshot_unknown_values_are_kept_not_dropped() {
+        let body = r#"[{"sessionId":"s1","kind":"weird","status":"frobnicating"},{"sessionId":"s2"}]"#;
+        let EventKind::Snapshot(list) = parse_snapshot("mac", body).unwrap().kind else { panic!() };
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].status, Some(PollStatus::Unknown));
+        assert_eq!(list[0].kind, PollKind::Unknown);
+        assert_eq!(list[1].status, None);
+    }
+
+    #[test]
+    fn snapshot_entry_without_session_id_is_skipped() {
+        let body = r#"[{"name":"orphan"},{"sessionId":"ok"}]"#;
+        let EventKind::Snapshot(list) = parse_snapshot("mac", body).unwrap().kind else { panic!() };
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].session_id, "ok");
+    }
+
+    #[test]
+    fn snapshot_invalid_json_is_error() {
+        assert!(parse_snapshot("mac", "not json").is_err());
+    }
+}

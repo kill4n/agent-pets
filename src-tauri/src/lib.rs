@@ -1,3 +1,5 @@
+pub mod collector;
+
 pub fn run() {
     env_logger::init();
     tauri::Builder::default()
