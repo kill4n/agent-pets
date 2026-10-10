@@ -1,0 +1,47 @@
+{
+  "name": "default",
+  "frameSize": [
+    64,
+    64
+  ],
+  "scale": 2,
+  "animations": {
+    "working": {
+      "sheet": "sheet.png",
+      "row": 0,
+      "frames": 6,
+      "fps": 10
+    },
+    "idle": {
+      "sheet": "sheet.png",
+      "row": 1,
+      "frames": 4,
+      "fps": 4
+    },
+    "needs_input": {
+      "sheet": "sheet.png",
+      "row": 2,
+      "frames": 4,
+      "fps": 6
+    },
+    "delegating": {
+      "sheet": "sheet.png",
+      "row": 3,
+      "frames": 6,
+      "fps": 8
+    },
+    "waiting_peer": {
+      "sheet": "sheet.png",
+      "row": 4,
+      "frames": 6,
+      "fps": 4
+    },
+    "gone": {
+      "sheet": "sheet.png",
+      "row": 5,
+      "frames": 6,
+      "fps": 12,
+      "loop": false
+    }
+  }
+}
