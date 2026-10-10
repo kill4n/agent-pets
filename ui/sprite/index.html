@@ -2,12 +2,20 @@
 <html><head><meta charset="utf-8"><title>buddy sprite</title>
 <style>
   html,body{margin:0;background:transparent;overflow:hidden;user-select:none;-webkit-user-select:none;height:100%}
-  /* the window may be wider than the sprite (room for the tooltip): centre the canvas */
-  body{display:flex;justify-content:center;align-items:flex-start}
+  /* the window reserves room ABOVE the sprite for the speech bubble: sprite sits at the bottom, centred */
+  body{display:flex;justify-content:center;align-items:flex-end}
   #c{display:block;flex:none;image-rendering:pixelated;cursor:grab}
-  #tip{position:absolute;left:50%;transform:translateX(-50%);bottom:4px;width:max-content;max-width:calc(100% - 8px);
-       box-sizing:border-box;background:rgba(20,20,30,.9);color:#eee;font:11px/1.35 system-ui;padding:4px 7px;
-       border-radius:6px;white-space:normal;overflow-wrap:anywhere;text-align:center;display:none;pointer-events:none}
-  #tip.show{display:block}
+  /* comic-style speech bubble anchored over the sprite's head */
+  #tip{position:absolute;left:50%;bottom:var(--sprite-h,128px);transform:translate(-50%,-10px) scale(.6);transform-origin:50% 100%;
+       width:max-content;max-width:calc(100% - 12px);box-sizing:border-box;
+       background:#fffbe8;color:#1a1a22;border:2px solid #222;border-radius:10px;
+       font:11px/1.35 system-ui;padding:5px 8px;white-space:normal;overflow-wrap:anywhere;text-align:center;
+       box-shadow:0 2px 0 #222;opacity:0;visibility:hidden;pointer-events:none;
+       transition:transform 120ms cubic-bezier(.2,1.4,.4,1),opacity 120ms ease}
+  #tip.show{opacity:1;visibility:visible;transform:translate(-50%,-10px) scale(1)}
+  /* tail: dark outline triangle + lighter inner triangle, pointing down at the sprite */
+  #tip::before,#tip::after{content:"";position:absolute;left:50%;top:100%;transform:translateX(-50%);border-style:solid;border-color:transparent}
+  #tip::before{border-width:9px 7px 0 7px;border-top-color:#222;margin-top:2px}
+  #tip::after{border-width:7px 5px 0 5px;border-top-color:#fffbe8;margin-top:0}
 </style></head>
-<body><canvas id="c"></canvas><div id="tip"></div><script type="module" src="./main.ts"></script></body></html>
+<body><canvas id="c"></canvas><div id="tip" role="status"></div><script type="module" src="./main.ts"></script></body></html>
