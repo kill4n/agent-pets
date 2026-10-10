@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   root: "ui",
+  publicDir: resolve(__dirname, "ui/public"),
   clearScreen: false,
   server: { port: 1420, strictPort: true },
   build: {
