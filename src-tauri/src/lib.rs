@@ -1,4 +1,5 @@
 pub mod collector;
+pub mod state;
 
 pub fn run() {
     env_logger::init();

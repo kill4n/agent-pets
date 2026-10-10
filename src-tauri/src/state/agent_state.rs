@@ -1,0 +1,42 @@
+use serde::Serialize;
+use std::path::PathBuf;
+use std::time::Instant;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct AgentId { pub host: String, pub session_id: String }
+
+impl AgentId {
+    pub fn key(&self) -> String { format!("{}:{}", self.host, self.session_id) }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Visible { Working, Idle, NeedsInput, Delegating, WaitingPeer, Gone }
+
+#[derive(Debug, Clone)]
+pub struct AgentState {
+    pub id: AgentId,
+    pub name: String,
+    pub cwd: Option<PathBuf>,
+    pub visible: Visible,
+    pub waiting_for: Option<String>,
+    pub peer: Option<String>,
+    pub subagents: u32,
+    pub sent_message: bool,
+    pub since: Instant,
+    pub last_hook_at: Option<Instant>,
+    pub last_seen: Instant,
+    pub missed_polls: u8,
+}
+
+impl AgentState {
+    pub fn new(id: AgentId, now: Instant) -> Self {
+        let name = id.session_id.chars().take(8).collect();
+        Self { id, name, cwd: None, visible: Visible::Idle, waiting_for: None, peer: None,
+            subagents: 0, sent_message: false, since: now, last_hook_at: None, last_seen: now, missed_polls: 0 }
+    }
+
+    pub fn set_visible(&mut self, v: Visible, now: Instant) {
+        if self.visible != v { self.visible = v; self.since = now; }
+    }
+}
