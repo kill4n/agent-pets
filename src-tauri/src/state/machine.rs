@@ -42,7 +42,7 @@ pub fn apply_hook(s: &mut AgentState, h: &HookEvent, now: Instant) {
                 Visible::NeedsInput
             } else { s.visible }
         }
-        "SubagentStart" => { s.subagents += 1; s.visible }
+        "SubagentStart" => { s.subagents = s.subagents.saturating_add(1); s.visible }
         "SubagentStop" => { s.subagents = s.subagents.saturating_sub(1);
             if s.visible == Visible::Delegating { Visible::Working } else { s.visible } }
         "SessionEnd" => Visible::Gone,
@@ -65,7 +65,7 @@ pub fn apply_poll(s: &mut AgentState, p: &PolledAgent, now: Instant) {
         s.set_visible(Visible::NeedsInput, now);
         return;
     }
-    if recent_hook && s.visible != Visible::Gone { return; }
+    if recent_hook { return; }
 
     let base = match (p.kind, p.status, p.state) {
         (PollKind::Background, _, Some(st)) => match st {
@@ -74,7 +74,11 @@ pub fn apply_poll(s: &mut AgentState, p: &PolledAgent, now: Instant) {
             PollState::Done | PollState::Failed | PollState::Stopped => Visible::Gone,
             PollState::Unknown => s.visible,
         },
-        (_, Some(PollStatus::Busy), _) => { s.sent_message = false; s.peer = None; s.waiting_for = None; Visible::Working }
+        (_, Some(PollStatus::Busy), _) => {
+            if s.visible == Visible::WaitingPeer { s.sent_message = false; s.peer = None; }
+            s.waiting_for = None;
+            Visible::Working
+        }
         (_, Some(PollStatus::Idle), _) => if s.sent_message { Visible::WaitingPeer } else { Visible::Idle },
         _ => s.visible,
     };
@@ -254,5 +258,38 @@ mod tests {
         apply_poll(&mut s, &polled(Some(PollStatus::Busy)), now);
         assert_eq!(s.missed_polls, 0);
         assert_eq!(s.visible, Visible::Working, "reappearing cancels gone");
+    }
+
+    #[test] fn session_end_beats_poll_within_hook_window() {
+        let (mut s, now) = fresh();
+        apply_hook(&mut s, &hook("SessionEnd"), now);
+        apply_poll(&mut s, &polled(Some(PollStatus::Busy)), now + Duration::from_secs(2));
+        assert_eq!(s.visible, Visible::Gone);
+        apply_poll(&mut s, &polled(Some(PollStatus::Busy)), now + Duration::from_secs(6));
+        assert_eq!(s.visible, Visible::Working);
+    }
+
+    #[test] fn poll_busy_while_working_keeps_pending_send() {
+        let (mut s, now) = fresh();
+        let mut h = hook("PostToolUse");
+        h.tool_name = Some("SendMessage".into()); h.recipient = Some("buddy-2".into());
+        apply_hook(&mut s, &h, now);
+        apply_poll(&mut s, &polled(Some(PollStatus::Busy)), now + Duration::from_secs(6));
+        assert_eq!(s.visible, Visible::Working);
+        apply_hook(&mut s, &hook("Stop"), now + Duration::from_secs(7));
+        assert_eq!(s.visible, Visible::WaitingPeer);
+        assert_eq!(s.peer.as_deref(), Some("buddy-2"));
+    }
+
+    #[test] fn poll_busy_leaves_waiting_peer() {
+        let (mut s, now) = fresh();
+        let mut h = hook("PostToolUse");
+        h.tool_name = Some("SendMessage".into()); h.recipient = Some("buddy-2".into());
+        apply_hook(&mut s, &h, now);
+        apply_hook(&mut s, &hook("Stop"), now);
+        assert_eq!(s.visible, Visible::WaitingPeer);
+        apply_poll(&mut s, &polled(Some(PollStatus::Busy)), now + Duration::from_secs(6));
+        assert_eq!(s.visible, Visible::Working);
+        assert!(s.peer.is_none());
     }
 }
