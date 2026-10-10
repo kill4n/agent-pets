@@ -1,0 +1,21 @@
+{
+  "name": "buddy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "tauri": "cargo tauri",
+    "gen:pack": "node scripts/gen-default-pack.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-autostart": "^2.3.0"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.0"
+  }
+}
