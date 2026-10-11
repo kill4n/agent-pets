@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "tauri": "cargo tauri",
-    "gen:pack": "node scripts/gen-default-pack.mjs"
+    "gen:pack": "node scripts/gen-slime-pack.mjs && node scripts/gen-fox-pack.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

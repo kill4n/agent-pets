@@ -1,4 +1,4 @@
-// Generates assets/packs/default/{sheet.png,pack.json}: a pixel-art fox mascot.
+// Generates assets/packs/fox/{sheet.png,pack.json}: a pixel-art fox mascot.
 // 64x64 frames, 8 columns x 6 rows (one row per state). State is shown by a coloured scarf + props/pose.
 import { PNG } from "pngjs";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -235,11 +235,11 @@ order.forEach((state, row) => {
   for (let col = 0; col < frames[state]; col++) anims[state]({ x: col * F, y: row * F }, col);
 });
 
-mkdirSync("assets/packs/default", { recursive: true });
-writeFileSync("assets/packs/default/sheet.png", PNG.sync.write(png));
-const manifest = { name: "default", frameSize: [F, F], scale: 2, animations: {} };
+mkdirSync("assets/packs/fox", { recursive: true });
+writeFileSync("assets/packs/fox/sheet.png", PNG.sync.write(png));
+const manifest = { name: "Zorro", frameSize: [F, F], scale: 2, animations: {} };
 order.forEach((state, row) => {
   manifest.animations[state] = { sheet: "sheet.png", row, frames: frames[state], fps: fps[state], ...(state === "gone" ? { loop: false } : {}) };
 });
-writeFileSync("assets/packs/default/pack.json", JSON.stringify(manifest, null, 2) + "\n");
-console.log(`default pack written (${png.width}x${png.height})`);
+writeFileSync("assets/packs/fox/pack.json", JSON.stringify(manifest, null, 2) + "\n");
+console.log(`fox pack written (${png.width}x${png.height})`);
