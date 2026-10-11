@@ -66,31 +66,31 @@ function fox(o, state, opt = {}) {
           tailWag = 0, alpha = 255, scale = 1, curled = false, blush = false } = opt;
   const A = (c) => withAlpha(c, alpha);
   const S = (v) => v * scale;
-  const cx = o.x + 32, hy = o.y + 27 + dy + (1 - scale) * 14, by = o.y + 46 + dy + (1 - scale) * 6;
+  const cx = o.x + 32, hy = o.y + 26 + dy + (1 - scale) * 14, by = o.y + 46 + dy + (1 - scale) * 6;
   const ink = A(INK), fur = A(FUR), furD = A(FUR_DARK), white = A(WHITE), cream = A(CREAM);
 
   // ground shadow
   ellipse(cx, o.y + 58, Math.round(S(14)), 3, [0, 0, 0, Math.round(alpha * 0.3)]);
 
   // tail (behind body, right side), bushy with white tip
-  const tx = cx + Math.round(S(13)), ty = by + Math.round(S(4)) - tailWag;
-  ellipseOutline(tx, ty, Math.round(S(8)), Math.round(S(5)), ink);
-  ellipse(tx, ty, Math.round(S(8)), Math.round(S(5)), fur);
+  const tx = cx + Math.round(S(12)), ty = by + Math.round(S(5)) - tailWag;
+  ellipseOutline(tx, ty, Math.round(S(8)), Math.round(S(4)), ink);
+  ellipse(tx, ty, Math.round(S(8)), Math.round(S(4)), fur);
   ellipse(tx + Math.round(S(5)), ty - Math.round(S(1)) - tailWag, Math.round(S(3)), Math.round(S(3)), white);
   ellipse(tx - Math.round(S(3)), ty + Math.round(S(2)), Math.round(S(4)), Math.round(S(2)), furD);
 
   // body
-  const brx = Math.round(S(12)), bry = Math.round(S(curled ? 10 : 11));
+  const brx = Math.round(S(9)), bry = Math.round(S(curled ? 10 : 12));
   ellipseOutline(cx, by, brx, bry, ink);
   ellipse(cx, by, brx, bry, fur);
   for (let y = Math.round(bry * 0.5); y <= bry; y++) for (let x = -brx; x <= brx; x++) if (inEllipse(x, y, brx, bry)) px(cx + x, by + y, furD);
-  ellipse(cx, by + Math.round(S(3)), Math.round(S(6)), Math.round(S(6)), cream); // belly
+  ellipse(cx, by + Math.round(S(3)), Math.round(S(4)), Math.round(S(6)), cream); // belly
 
   // feet
-  ellipse(cx - Math.round(S(6)), by + bry - 1, Math.round(S(4)), Math.round(S(2)), ink);
-  ellipse(cx + Math.round(S(6)), by + bry - 1, Math.round(S(4)), Math.round(S(2)), ink);
-  ellipse(cx - Math.round(S(6)), by + bry - 2, Math.round(S(3)), Math.round(S(1.5)), furD);
-  ellipse(cx + Math.round(S(6)), by + bry - 2, Math.round(S(3)), Math.round(S(1.5)), furD);
+  ellipse(cx - Math.round(S(5)), by + bry - 1, Math.round(S(3)), Math.round(S(2)), ink);
+  ellipse(cx + Math.round(S(5)), by + bry - 1, Math.round(S(3)), Math.round(S(2)), ink);
+  ellipse(cx - Math.round(S(5)), by + bry - 2, Math.round(S(2)), Math.round(S(1.5)), furD);
+  ellipse(cx + Math.round(S(5)), by + bry - 2, Math.round(S(2)), Math.round(S(1.5)), furD);
 
   // arms (front paws): angle 0 = down, 180 = up
   const arm = (side, angle) => {
@@ -105,14 +105,14 @@ function fox(o, state, opt = {}) {
   // scarf (state colour) around the neck + a dangling end
   const sc = A(SCARF[state]);
   const ny = by - bry + Math.round(S(1));
-  rect(cx - Math.round(S(9)), ny - 1, Math.round(S(18)), Math.round(S(4)) + 2, ink);
-  rect(cx - Math.round(S(8)), ny, Math.round(S(16)), Math.round(S(4)), sc);
-  hline(cx - Math.round(S(8)), ny + Math.round(S(4)) - 1, Math.round(S(16)), A(shade(SCARF[state], 0.7)));
-  rect(cx - Math.round(S(10)), ny + 2, Math.round(S(4)) + 1, Math.round(S(8)), ink);
-  rect(cx - Math.round(S(9)), ny + 3, Math.round(S(3)), Math.round(S(6)), sc);
+  rect(cx - Math.round(S(7)), ny - 1, Math.round(S(14)), Math.round(S(4)) + 2, ink);
+  rect(cx - Math.round(S(6)), ny, Math.round(S(12)), Math.round(S(4)), sc);
+  hline(cx - Math.round(S(6)), ny + Math.round(S(4)) - 1, Math.round(S(12)), A(shade(SCARF[state], 0.7)));
+  rect(cx - Math.round(S(8)), ny + 2, Math.round(S(4)) + 1, Math.round(S(8)), ink);
+  rect(cx - Math.round(S(7)), ny + 3, Math.round(S(3)), Math.round(S(6)), sc);
 
   // ears (triangles) with pink inner, droop lowers the tip
-  const hrx = Math.round(S(12)), hry = Math.round(S(10));
+  const hrx = Math.round(S(11)), hry = Math.round(S(9));
   const earBaseY = hy - Math.round(S(4));
   for (const side of [-1, 1]) {
     const bx = cx + side * Math.round(S(7));
