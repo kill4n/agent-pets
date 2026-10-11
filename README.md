@@ -9,7 +9,7 @@ Desktop pet para Claude Code: un sprite flotante por sesión, animado según su 
 ## Desarrollo
 ```bash
 npm install
-npm run gen:pack        # regenera assets/packs/default
+npm run gen:pack        # regenera assets/packs/default (Slime) y assets/packs/fox (Zorro)
 cargo tauri dev
 ```
 Revisión visual sin Claude Code: `npm run dev` y abre
@@ -30,6 +30,8 @@ Revisión visual sin Claude Code: `npm run dev` y abre
 ## Packs de sprites
 `assets/packs/<nombre>/pack.json` + PNG. Seis animaciones obligatorias: `working`, `idle`,
 `needs_input`, `delegating`, `waiting_peer`, `gone`. Ver `assets/packs/default/pack.json`.
+Packs incluidos: `default` (Slime) y `fox` (Zorro). Se cambian desde Ajustes; el campo `name`
+del manifiesto es lo que muestra el desplegable.
 
 ## Cómo funciona
 - Hooks HTTP de Claude Code → `POST 127.0.0.1:7433/hook` (push inmediato).

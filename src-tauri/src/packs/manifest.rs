@@ -76,6 +76,17 @@ pub fn load_pack(dir: &Path) -> Result<Manifest, PackError> {
     Ok(m)
 }
 
+/// A pack directory plus the human name from its manifest (falls back to the directory name).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PackInfo { pub dir: String, pub name: String }
+
+pub fn list_pack_infos(root: &Path) -> Vec<PackInfo> {
+    list_packs(root).into_iter().map(|dir| {
+        let name = load_pack(&root.join(&dir)).map(|m| m.name).unwrap_or_else(|_| dir.clone());
+        PackInfo { dir, name }
+    }).collect()
+}
+
 pub fn list_packs(root: &Path) -> Vec<String> {
     let Ok(rd) = std::fs::read_dir(root) else { return vec![] };
     let mut v: Vec<String> = rd.filter_map(|e| e.ok())
@@ -151,9 +162,25 @@ mod tests {
         assert_eq!(list_packs(root.path()), vec!["a".to_string()]);
     }
 
-    #[test] fn bundled_default_pack_is_valid() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/packs/default");
-        let m = load_pack(&dir).expect("default pack must validate");
-        assert_eq!(m.name, "default");
+    #[test] fn bundled_packs_are_valid() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/packs");
+        let m = load_pack(&root.join("default")).expect("default pack must validate");
+        assert_eq!(m.name, "Slime");
+        let m = load_pack(&root.join("fox")).expect("fox pack must validate");
+        assert_eq!(m.name, "Zorro");
+        assert_eq!(list_packs(&root), vec!["default".to_string(), "fox".to_string()]);
+    }
+
+    #[test] fn list_pack_infos_returns_dir_and_manifest_name() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("a")).unwrap();
+        write_png(&root.path().join("a/s.png"), 64, 96);
+        fs::write(root.path().join("a/pack.json"), full_json("s.png").replace(r#""name":"t""#, r#""name":"Pretty""#)).unwrap();
+        fs::create_dir(root.path().join("broken")).unwrap();
+        fs::write(root.path().join("broken/pack.json"), "{}").unwrap();
+        let infos = list_pack_infos(root.path());
+        assert_eq!(infos.len(), 2);
+        assert_eq!((infos[0].dir.as_str(), infos[0].name.as_str()), ("a", "Pretty"));
+        assert_eq!((infos[1].dir.as_str(), infos[1].name.as_str()), ("broken", "broken"), "invalid manifest falls back to dir name");
     }
 }
