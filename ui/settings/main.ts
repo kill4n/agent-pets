@@ -9,7 +9,7 @@ interface Status {
 }
 
 const app = document.getElementById("app")!;
-let status: Status; let agents: AgentView[] = []; let packs: string[] = []; let autostart = false;
+let status: Status; let agents: AgentView[] = []; let packs: { dir: string; name: string }[] = []; let autostart = false;
 
 // All dynamic values go through textContent: agent strings are untrusted.
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -32,8 +32,8 @@ function render() {
 
   const packSel = el("select", undefined, { id: "pack" });
   for (const p of packs) {
-    const o = el("option", p);
-    o.selected = p === status.pack;
+    const o = el("option", p.name, { value: p.dir });
+    o.selected = p.dir === status.pack;
     packSel.append(o);
   }
   packSel.onchange = async () => {
@@ -81,7 +81,7 @@ function render() {
 
 async function refresh() {
   [status, agents, packs, autostart] = await Promise.all([
-    invoke<Status>("get_status"), invoke<AgentView[]>("list_agents"), invoke<string[]>("list_pack_names"), isEnabled().catch(() => false),
+    invoke<Status>("get_status"), invoke<AgentView[]>("list_agents"), invoke<{ dir: string; name: string }[]>("list_pack_names"), isEnabled().catch(() => false),
   ]);
   render();
 }

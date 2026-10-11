@@ -1,6 +1,6 @@
 use crate::config::{config_path, Config};
 use crate::installer;
-use crate::packs::{list_packs, load_pack, Manifest};
+use crate::packs::{list_pack_infos, PackInfo, list_packs, load_pack, Manifest};
 use crate::state::store::AgentView;
 use crate::state::agent_state::provisional_name;
 use crate::windows::manager::{label_for, save_position};
@@ -75,7 +75,7 @@ pub fn uninstall_hooks(app: State<Arc<App>>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn list_pack_names(app: State<Arc<App>>) -> Vec<String> { list_packs(&app.packs_root) }
+pub fn list_pack_names(app: State<Arc<App>>) -> Vec<PackInfo> { list_pack_infos(&app.packs_root) }
 
 #[tauri::command]
 pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result<(), String> {
