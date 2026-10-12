@@ -20,7 +20,12 @@ async fn hook(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> St
     if !ok { return StatusCode::UNAUTHORIZED; }
     match serde_json::from_slice::<serde_json::Value>(&body) {
         Ok(v) => match parse_hook(&st.host, &v) {
-            Ok(ev) => { let _ = st.tx.try_send(ev); }
+            Ok(ev) => {
+                if let crate::collector::event::EventKind::Hook(h) = &ev.kind {
+                    log::debug!("hook {} session={} agent={:?} type={:?} tool={:?}", h.event, ev.session_id, h.agent_id, h.agent_type, h.tool_name);
+                }
+                let _ = st.tx.try_send(ev);
+            }
             Err(e) => log::warn!("hook dropped: {e}"),
         },
         Err(e) => log::warn!("hook body not json: {e}"),
