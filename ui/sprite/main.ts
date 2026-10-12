@@ -80,9 +80,31 @@ canvas.addEventListener("mousemove", (e) => {
   }
 });
 canvas.addEventListener("mouseup", () => {
-  if (downAt) { tipVisible = !tipVisible; tip.classList.toggle("show", tipVisible); if (view) renderTip(tip, view, 0); }
+  if (downAt) void toggleBubble();
   downAt = null;
 });
+
+// The window is only as big as the sprite while the bubble is closed; ask Rust to grow it before
+// showing the bubble, and shrink it after hiding, so the bubble is never clipped.
+let toggling = false;
+async function toggleBubble() {
+  if (toggling) return;
+  toggling = true;
+  const next = !tipVisible;
+  try {
+    if (next) {
+      if (!mock) await invoke("set_bubble", { key, open: true });
+      tipVisible = true; tip.classList.add("show"); if (view) renderTip(tip, view, 0);
+    } else {
+      tipVisible = false; tip.classList.remove("show");
+      if (!mock) await invoke("set_bubble", { key, open: false });
+    }
+  } catch (err) {
+    console.warn("set_bubble failed", err);
+  } finally {
+    toggling = false;
+  }
+}
 
 async function main() {
   if (mock) {
