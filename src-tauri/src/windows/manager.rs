@@ -153,7 +153,7 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
 }
 
 /// Current outer position of a window in logical pixels.
-fn current_pos(w: &tauri::WebviewWindow) -> Option<Pos> {
+pub fn current_pos(w: &tauri::WebviewWindow) -> Option<Pos> {
     let p = w.outer_position().ok()?;
     let f = w.scale_factor().ok()?;
     Some(Pos { x: (p.x as f64 / f).round() as i32, y: (p.y as f64 / f).round() as i32 })

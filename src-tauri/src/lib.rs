@@ -25,6 +25,7 @@ pub struct App {
     pub store: Mutex<Store>,
     pub positions: Mutex<Positions>,
     pub placement: Mutex<Placement>,
+    pub wanderers: Mutex<windows::wander::Wanderers>,
     /// None when no valid pack could be loaded: the app keeps running, sprites just don't render.
     pub manifest: Mutex<Option<Manifest>>,
     pub packs_root: PathBuf,
@@ -112,6 +113,7 @@ pub fn run() {
                 config: Mutex::new(cfg.clone()), store: Mutex::new(Store::new()),
                 positions: Mutex::new(Positions::load(positions_path())),
                 placement: Mutex::new(Placement::default()),
+                wanderers: Mutex::new(windows::wander::Wanderers::default()),
                 manifest: Mutex::new(manifest), packs_root: root, host: host.clone(), poll_error: err_rx,
                 server_error: watch::channel(None).0, pack_warning: watch::channel(pack_warn).0,
             });
@@ -148,6 +150,7 @@ pub fn run() {
                         _ = sweep.tick() => {
                             let changes = st.store.lock().unwrap().sweep(Instant::now());
                             mirror(&handle, &st, changes);
+                            wander_tick(&handle, &st);
                         }
                         Ok(()) = poll_rx.changed() => tray::refresh_warning(&handle, &st),
                         Ok(()) = server_rx.changed() => tray::refresh_warning(&handle, &st),
@@ -160,7 +163,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_manifest, commands::get_pack_url, commands::report_position, commands::list_agents,
             commands::get_status, commands::install_hooks, commands::uninstall_hooks, commands::list_pack_names,
-            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal
+            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal, commands::set_wander
         ])
         .build(tauri::generate_context!())
         .expect("error while building buddy")
@@ -175,9 +178,51 @@ pub fn run() {
 /// Mirror store changes into sprite windows and refresh the settings window.
 fn mirror(handle: &tauri::AppHandle, st: &Arc<App>, changes: Vec<Change>) {
     if changes.is_empty() { return; }
+    for ch in &changes {
+        if let Change::Removed(key) = ch { st.wanderers.lock().unwrap().remove(&windows::manager::label_for(key)); }
+    }
     let m = st.manifest.lock().unwrap().clone();
     windows::manager::apply_changes(handle, &changes, m.as_ref(), &st.positions, &st.placement);
     notify_settings(handle, st);
+}
+
+/// Once a second: let idle sprites stroll, and bring strolling ones home when they get busy.
+fn wander_tick(handle: &tauri::AppHandle, st: &Arc<App>) {
+    use windows::wander::{step_position, Decision, STROLL_STEP, STROLL_STEPS};
+    if !st.config.lock().unwrap().wander { return; }
+    let Some(m) = st.manifest.lock().unwrap().clone() else { return };
+    let now = Instant::now();
+    let views = st.store.lock().unwrap().views(now);
+    let screen_w = handle.primary_monitor().ok().flatten()
+        .map(|mon| (mon.size().width as f64 / mon.scale_factor()) as i32).unwrap_or(1440);
+    let (sprite_w, _) = windows::manager::collapsed_size(&m);
+    for v in views {
+        let label = windows::manager::label_for(&v.key);
+        let Some(w) = handle.get_webview_window(&label) else { continue };
+        let open = st.placement.lock().unwrap().is_open(&label);
+        let strollable = !open && matches!(v.visible, state::Visible::Idle | state::Visible::WaitingPeer);
+        let idle_for = strollable.then(|| Duration::from_secs(v.since_secs));
+        let Some(cur) = windows::manager::current_pos(&w) else { continue };
+        let pos = windows::manager::collapsed_origin(open, cur, &m);
+        let decision = st.wanderers.lock().unwrap().tick(&label, idle_for, pos, screen_w, sprite_w as i32, now);
+        let (from, to, away) = match decision {
+            Decision::Nothing => continue,
+            Decision::Stroll { from, to } => (from, to, true),
+            Decision::GoHome { from, to } => (from, to, false),
+        };
+        st.wanderers.lock().unwrap().stroll_started(&label);
+        let (st2, label2, m2) = (st.clone(), label.clone(), m.clone());
+        tauri::async_runtime::spawn(async move {
+            let open_now = st2.placement.lock().unwrap().is_open(&label2);
+            let (dx, dy) = if open_now { windows::manager::bubble_offset(&m2) } else { (0.0, 0.0) };
+            for i in 1..=STROLL_STEPS {
+                let p = step_position(from, to, i, STROLL_STEPS);
+                let _ = w.set_position(tauri::LogicalPosition::new(p.x as f64 - dx, p.y as f64 - dy));
+                tokio::time::sleep(STROLL_STEP).await;
+            }
+            st2.wanderers.lock().unwrap().stroll_finished(&label2, away, Instant::now());
+        });
+    }
 }
 
 fn notify_settings(handle: &tauri::AppHandle, st: &Arc<App>) {
