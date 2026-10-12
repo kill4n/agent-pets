@@ -17,6 +17,7 @@ pub struct Status {
     pub hooks_installed: bool, pub poll_error: Option<String>, pub server_error: Option<String>,
     pub pack_warning: Option<String>, pub hook_url: String, pub token: String, pub pack: String,
     pub size: SpriteSize,
+    pub wander: bool,
 }
 
 #[tauri::command]
@@ -55,8 +56,12 @@ pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
         Some(m) => collapsed_origin(open, Pos { x, y }, &m),
         None => Pos { x, y },
     };
+    // window moves caused by a stroll are not the user's: never save them
+    let now = Instant::now();
+    if app.wanderers.lock().unwrap().ignores_reports(&label, now) { return; }
     save_position(&mut app.positions.lock().unwrap(), &view.host, &view.name, origin.x, origin.y);
     app.placement.lock().unwrap().mark_dragged(&label);
+    app.wanderers.lock().unwrap().rehome(&label, origin, now);
 }
 
 /// Push a new effective manifest to every sprite window and resize them around their sprites.
@@ -82,6 +87,14 @@ pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result
     let old = app.manifest.lock().unwrap().replace(m.clone());
     apply_manifest(&handle, &app, old.as_ref(), &m);
     Ok(())
+}
+
+/// Turn idle strolling on or off.
+#[tauri::command]
+pub fn set_wander(app: State<Arc<App>>, enabled: bool) {
+    let mut cfg = app.config.lock().unwrap();
+    cfg.wander = enabled;
+    if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
 }
 
 /// Bring the terminal hosting this agent's session to the front (double-click on the sprite).
@@ -112,7 +125,7 @@ pub fn get_status(app: State<Arc<App>>) -> Status {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
     Status { hooks_installed: installer::is_installed(&settings, &cfg.hook_url()),
              poll_error: app.poll_error.borrow().clone(), server_error: app.server_error.borrow().clone(),
-             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size }
+             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander }
 }
 
 #[tauri::command]
