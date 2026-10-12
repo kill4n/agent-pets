@@ -23,6 +23,9 @@ pub struct HookEvent {
     pub tool_name: Option<String>,
     pub notification_type: Option<String>,
     pub recipient: Option<String>,
+    /// Present when the hook fired inside a subagent (or on SubagentStart/Stop for that subagent).
+    pub agent_id: Option<String>,
+    pub agent_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +90,8 @@ pub fn parse_hook(host: &str, body: &serde_json::Value) -> Result<AgentEvent, Pa
             tool_name,
             notification_type: str_field("notification_type"),
             recipient,
+            agent_id: str_field("agent_id"),
+            agent_type: str_field("agent_type"),
         }),
         at: Instant::now(),
     })
@@ -138,6 +143,16 @@ mod tests {
             "notification_type":"permission_prompt","message":"x"});
         let EventKind::Hook(h) = parse_hook("mac", &body).unwrap().kind else { panic!() };
         assert_eq!(h.notification_type.as_deref(), Some("permission_prompt"));
+    }
+
+    #[test]
+    fn hook_carries_subagent_identity() {
+        let body = json!({"session_id":"abc","hook_event_name":"SubagentStart","agent_id":"ag-1","agent_type":"Explore"});
+        let EventKind::Hook(h) = parse_hook("mac", &body).unwrap().kind else { panic!() };
+        assert_eq!(h.agent_id.as_deref(), Some("ag-1"));
+        assert_eq!(h.agent_type.as_deref(), Some("Explore"));
+        let EventKind::Hook(h) = parse_hook("mac", &json!({"session_id":"abc","hook_event_name":"Stop"})).unwrap().kind else { panic!() };
+        assert_eq!(h.agent_id, None);
     }
 
     #[test]

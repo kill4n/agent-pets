@@ -199,6 +199,7 @@ fn wander_tick(handle: &tauri::AppHandle, st: &Arc<App>) {
         .map(|mon| (mon.size().width as f64 / mon.scale_factor()) as i32).unwrap_or(1440);
     let (sprite_w, _) = windows::manager::collapsed_size(&m);
     for v in views {
+        if v.parent.is_some() { continue; } // subagent sprites stay by their parent
         let label = windows::manager::label_for(&v.key);
         let Some(w) = handle.get_webview_window(&label) else { continue };
         let open = st.placement.lock().unwrap().is_open(&label);

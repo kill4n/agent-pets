@@ -3,7 +3,7 @@ use crate::installer;
 use crate::packs::{list_pack_infos, PackInfo, list_packs, load_pack, Manifest};
 use crate::state::store::AgentView;
 use crate::state::agent_state::provisional_name;
-use crate::windows::manager::{collapsed_origin, effective_manifest, label_for, resize_all, save_position};
+use crate::windows::manager::{child_manifest, collapsed_origin, effective_manifest, label_for, label_for_view, manifest_for_label, resize_all, save_position};
 use crate::windows::positions::Pos;
 use crate::App;
 use base64::Engine;
@@ -23,7 +23,11 @@ pub struct Status {
 }
 
 #[tauri::command]
-pub fn get_manifest(app: State<Arc<App>>) -> Option<Manifest> { app.manifest.lock().unwrap().clone() }
+pub fn get_manifest(app: State<Arc<App>>, key: Option<String>) -> Option<Manifest> {
+    let m = app.manifest.lock().unwrap().clone()?;
+    let is_child = key.map(|k| app.store.lock().unwrap().views(Instant::now()).iter().any(|v| v.key == k && v.parent.is_some())).unwrap_or(false);
+    Some(if is_child { child_manifest(&m) } else { m })
+}
 
 /// True if `s` is exactly one plain path component (no separators, `..`, root or prefix).
 fn is_single_normal(s: &str) -> bool {
@@ -48,6 +52,8 @@ pub fn get_pack_url(app: State<Arc<App>>, sheet: String) -> Result<String, Strin
 pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
     let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key);
     let Some(view) = view else { return };
+    // subagent sprites hug their parent and never persist a position
+    if view.parent.is_some() { return; }
     // the provisional session_id[:8] name is throwaway: saving under it would never be found again
     if view.name == provisional_name(&view.session_id) { return; }
     // saved positions always describe the collapsed (sprite-only) rect
@@ -70,7 +76,10 @@ pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
 fn apply_manifest(handle: &AppHandle, app: &App, old: Option<&Manifest>, new: &Manifest) {
     if let Some(old) = old { resize_all(handle, old, new, &app.placement); }
     for label in handle.webview_windows().into_keys() {
-        if label.starts_with("sprite-") { let _ = handle.emit_to(EventTarget::webview_window(label), "manifest", new); }
+        if label.starts_with("sprite-") {
+            let m = manifest_for_label(new, &label);
+            let _ = handle.emit_to(EventTarget::webview_window(label), "manifest", &m);
+        }
     }
 }
 
@@ -128,8 +137,10 @@ pub fn do_set_wander(app: &App, enabled: bool, after_secs: u32) -> Result<(), St
 pub fn focus_terminal(app: State<Arc<App>>, key: String) -> Result<(), String> { do_focus_terminal(&app, &key) }
 
 pub fn do_focus_terminal(app: &App, key: &str) -> Result<(), String> {
-    let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key)
-        .ok_or("sesión desconocida")?;
+    let views = app.store.lock().unwrap().views(Instant::now());
+    let mut view = views.iter().find(|v| v.key == key).cloned().ok_or("sesión desconocida")?;
+    // a subagent sprite focuses its parent's terminal
+    if let Some(parent) = &view.parent { view = views.iter().find(|v| &v.key == parent).cloned().ok_or("sesión padre desconocida")?; }
     if view.pid.is_none() && view.job_id.is_none() { return Err("esta sesión no tiene un terminal asociado".into()); }
     let r = crate::focus::focus_session(view.pid, view.job_id.as_deref());
     if let Err(e) = &r { log::warn!("focus_terminal {}: {e}", view.name); }
@@ -140,7 +151,10 @@ pub fn do_focus_terminal(app: &App, key: &str) -> Result<(), String> {
 #[tauri::command(async)]
 pub fn set_bubble(handle: AppHandle, app: State<Arc<App>>, key: String, open: bool) -> Result<(), String> {
     let manifest = app.manifest.lock().unwrap().clone().ok_or("no pack loaded")?;
-    crate::windows::manager::set_bubble(&handle, &label_for(&key), &manifest, open, &app.placement)
+    let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key).ok_or("sesión desconocida")?;
+    let label = label_for_view(&view);
+    let m = manifest_for_label(&manifest, &label);
+    crate::windows::manager::set_bubble(&handle, &label, &m, open, &app.placement)
 }
 
 #[tauri::command]
