@@ -122,7 +122,7 @@ async function main() {
     const m: Manifest = await (await fetch("/assets-dev/pack.json")).json();
     for (const a of Object.values(m.animations)) a.loop ??= true; // Rust applies this serde default; raw pack.json omits it
     await loadManifest(m);
-    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null,
+    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null, job_id: null,
       visible: mock as AgentView["visible"], waiting_for: mock === "needs_input" ? "permission prompt" : null,
       peer: mock === "waiting_peer" ? "buddy-2" : null, since_secs: 0 });
     return;
