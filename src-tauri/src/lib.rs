@@ -99,6 +99,7 @@ pub fn run() {
             let mut cfg = Config::load(&config_path());
             let root = packs_root(&handle);
             let (manifest, pack, pack_warn) = load_initial_pack(&root, &cfg.pack);
+            let manifest = manifest.map(|m| windows::manager::effective_manifest(&m, cfg.size));
             cfg.pack = pack;
             let _ = cfg.save(&config_path());
             let host = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or_else(|_| "local".into());
@@ -158,7 +159,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_manifest, commands::get_pack_url, commands::report_position, commands::list_agents,
             commands::get_status, commands::install_hooks, commands::uninstall_hooks, commands::list_pack_names,
-            commands::set_pack, commands::get_config, commands::set_bubble
+            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size
         ])
         .build(tauri::generate_context!())
         .expect("error while building buddy")

@@ -5,7 +5,7 @@ import type { AgentView } from "../shared/types";
 
 interface Status {
   hooks_installed: boolean; poll_error: string | null; server_error: string | null; pack_warning: string | null;
-  hook_url: string; token: string; pack: string;
+  hook_url: string; token: string; pack: string; size: "small" | "normal" | "large";
 }
 
 const app = document.getElementById("app")!;
@@ -59,6 +59,17 @@ function render() {
     list.append(li);
   }
 
+  const sizeSel = el("select", undefined, { id: "size" });
+  for (const [v, label] of [["small", "Pequeño"], ["normal", "Normal"], ["large", "Grande"]] as const) {
+    const o = el("option", label, { value: v });
+    o.selected = v === status.size;
+    sizeSel.append(o);
+  }
+  sizeSel.onchange = async () => {
+    try { await invoke("set_size", { size: sizeSel.value }); } catch (err) { alert(`Tamaño inválido: ${err}`); }
+    await refresh();
+  };
+
   app.replaceChildren(
     el("h2", "Claude Code"),
     el("p", "Hooks: ", {},
@@ -71,6 +82,7 @@ function render() {
       el("br"), "Token: ", el("code", status.token)),
     el("h2", "Sprites"),
     el("label", "Pack ", {}, packSel),
+    el("label", "Tamaño ", {}, sizeSel),
     ...(status.pack_warning ? [el("p", `⚠ ${status.pack_warning}`, { class: "warn" })] : []),
     el("h2", "Sistema"),
     el("label", undefined, {}, auto, " Arrancar al iniciar sesión"),
