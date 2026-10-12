@@ -1,4 +1,5 @@
 use super::machine::{apply_hook, apply_poll, mark_missed};
+use super::agent_state::{child_session_id, provisional_name};
 use super::{AgentId, AgentState, Visible};
 use crate::collector::event::{AgentEvent, EventKind, PollKind, PollState};
 use serde::Serialize;
@@ -14,6 +15,8 @@ pub struct AgentView {
     pub cwd: Option<String>,
     pub pid: Option<u32>,
     pub job_id: Option<String>,
+    /// Key of the parent agent when this sprite is a subagent.
+    pub parent: Option<String>,
     pub visible: Visible,
     pub waiting_for: Option<String>,
     pub peer: Option<String>,
@@ -30,7 +33,7 @@ fn fp(s: &AgentState) -> Fingerprint { Fingerprint(s.visible, s.name.clone(), s.
 fn make_view(s: &AgentState, now: Instant) -> AgentView {
     AgentView {
         key: s.id.key(), host: s.id.host.clone(), session_id: s.id.session_id.clone(),
-        name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(),
+        name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(), parent: s.parent.clone(),
         visible: s.visible, waiting_for: s.waiting_for.clone(), peer: s.peer.clone(),
         since_secs: now.saturating_duration_since(s.since).as_secs(),
     }
@@ -72,7 +75,35 @@ impl Store {
             EventKind::Hook(h) => {
                 if ev.session_id.is_empty() { return vec![]; }
                 let id = AgentId { host: ev.host.clone(), session_id: ev.session_id.clone() };
-                self.upsert(id, now, |s| apply_hook(s, h, now)).into_iter().collect()
+                let parent_key = id.key();
+                let mut changes: Vec<Change> = self.upsert(id, now, |s| apply_hook(s, h, now)).into_iter().collect();
+                // a hook that names a subagent also drives that subagent's own (smaller) sprite
+                if let Some(agent_id) = &h.agent_id {
+                    let cid = AgentId { host: ev.host.clone(), session_id: child_session_id(&ev.session_id, agent_id) };
+                    let is_stop = h.event == "SubagentStop";
+                    if is_stop || self.agents.contains_key(&cid.key()) || h.event == "SubagentStart" || h.event.ends_with("ToolUse") {
+                        let name = h.agent_type.clone().unwrap_or_else(|| provisional_name(agent_id));
+                        let pk = parent_key.clone();
+                        changes.extend(self.upsert(cid, now, |c| {
+                            c.parent = Some(pk);
+                            if c.name == provisional_name(&c.id.session_id) || h.agent_type.is_some() { c.name = name; }
+                            c.last_hook_at = Some(now); c.last_seen = now;
+                            let next = if is_stop { Visible::Gone } else if c.subagents > 0 { Visible::Delegating } else { Visible::Working };
+                            c.set_visible(next, now);
+                        }));
+                    }
+                }
+                // the whole session ended: its subagents go too
+                if h.event == "SessionEnd" {
+                    let kids: Vec<String> = self.agents.values().filter(|c| c.parent.as_deref() == Some(&parent_key)).map(|c| c.id.key()).collect();
+                    for k in kids {
+                        if let Some(c) = self.agents.get_mut(&k) {
+                            let before = fp(c); c.set_visible(Visible::Gone, now);
+                            if fp(c) != before { changes.push(Change::Updated(make_view(c, now))); }
+                        }
+                    }
+                }
+                changes
             }
             EventKind::Snapshot(list) => {
                 let mut changes = vec![];
@@ -89,12 +120,12 @@ impl Store {
                     changes.extend(self.upsert(id, now, |s| apply_poll(s, p, now)));
                 }
                 for (key, s) in self.agents.iter_mut() {
-                    if s.id.host != ev.host || seen.contains(key) || s.visible == Visible::Gone { continue; }
+                    if s.id.host != ev.host || seen.contains(key) || s.visible == Visible::Gone || s.parent.is_some() { continue; }
                     let before = fp(s);
                     mark_missed(s, now);
                     if fp(s) != before {
                         let view = AgentView { key: key.clone(), host: s.id.host.clone(), session_id: s.id.session_id.clone(),
-                            name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(),
+                            name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(), parent: s.parent.clone(),
                             visible: s.visible, waiting_for: s.waiting_for.clone(), peer: s.peer.clone(), since_secs: 0 };
                         changes.push(Change::Updated(view));
                     }
@@ -123,7 +154,48 @@ mod tests {
     fn hook_ev(sid: &str, event: &str, cwd: Option<&str>) -> AgentEvent {
         AgentEvent { host: "h".into(), session_id: sid.into(), at: Instant::now(),
             kind: EventKind::Hook(HookEvent { event: event.into(), cwd: cwd.map(Into::into),
-                tool_name: None, notification_type: None, recipient: None }) }
+                tool_name: None, notification_type: None, recipient: None, agent_id: None, agent_type: None }) }
+    }
+    fn sub_ev(sid: &str, event: &str, agent: &str, kind: Option<&str>) -> AgentEvent {
+        AgentEvent { host: "h".into(), session_id: sid.into(), at: Instant::now(),
+            kind: EventKind::Hook(HookEvent { event: event.into(), cwd: None, tool_name: None, notification_type: None,
+                recipient: None, agent_id: Some(agent.into()), agent_type: kind.map(Into::into) }) }
+    }
+
+    #[test] fn subagent_start_creates_a_child_sprite_next_to_its_parent() {
+        let mut st = Store::new();
+        st.apply(&hook_ev("s1", "UserPromptSubmit", None));
+        let ch = st.apply(&sub_ev("s1", "SubagentStart", "ag-1", Some("Explore")));
+        let added: Vec<_> = ch.iter().filter_map(|c| if let Change::Added(v) = c { Some(v) } else { None }).collect();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].key, "h:s1/ag-1");
+        assert_eq!(added[0].name, "Explore");
+        assert_eq!(added[0].parent.as_deref(), Some("h:s1"));
+        assert_eq!(added[0].visible, Visible::Working);
+        let parent = st.views(Instant::now()).into_iter().find(|v| v.key == "h:s1").unwrap();
+        assert_eq!(parent.visible, Visible::Delegating);
+    }
+
+    #[test] fn subagent_stop_makes_the_child_gone_and_tool_use_keeps_it_alive() {
+        let mut st = Store::new();
+        st.apply(&sub_ev("s1", "SubagentStart", "ag-1", Some("Explore")));
+        assert!(st.apply(&sub_ev("s1", "PreToolUse", "ag-1", Some("Explore"))).is_empty(), "already working");
+        let ch = st.apply(&sub_ev("s1", "SubagentStop", "ag-1", Some("Explore")));
+        assert!(ch.iter().any(|c| matches!(c, Change::Updated(v) if v.key == "h:s1/ag-1" && v.visible == Visible::Gone)));
+        // tool use of an unknown subagent (app started mid-task) creates it
+        let ch = st.apply(&sub_ev("s2", "PostToolUse", "ag-9", None));
+        assert!(ch.iter().any(|c| matches!(c, Change::Added(v) if v.key == "h:s2/ag-9" && v.name == "ag-9")));
+    }
+
+    #[test] fn children_are_not_marked_missing_by_polls_but_die_with_their_session() {
+        let mut st = Store::new();
+        st.apply(&sub_ev("s1", "SubagentStart", "ag-1", Some("Explore")));
+        st.apply(&snap(&[("s1", "n", PollStatus::Busy)]));
+        assert!(st.apply(&snap(&[("s1", "n", PollStatus::Busy)])).is_empty());
+        let child = st.views(Instant::now()).into_iter().find(|v| v.key == "h:s1/ag-1").unwrap();
+        assert_eq!(child.visible, Visible::Working, "polls never list subagents; they must not go missing");
+        let ch = st.apply(&hook_ev("s1", "SessionEnd", None));
+        assert!(ch.iter().any(|c| matches!(c, Change::Updated(v) if v.key == "h:s1/ag-1" && v.visible == Visible::Gone)));
     }
     fn snap(agents: &[(&str, &str, PollStatus)]) -> AgentEvent {
         AgentEvent { host: "h".into(), session_id: String::new(), at: Instant::now(),

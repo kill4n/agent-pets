@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(wander_after_label(120), "2 min");
         assert_eq!(size_label(SpriteSize::Large), "Grande");
         let v = AgentView { key: "h:s".into(), host: "h".into(), session_id: "s".into(), name: "buddy-1".into(), cwd: None, pid: None,
-            job_id: None, visible: Visible::NeedsInput, waiting_for: None, peer: None, since_secs: 0 };
+            job_id: None, parent: None, visible: Visible::NeedsInput, waiting_for: None, peer: None, since_secs: 0 };
         assert_eq!(agent_label(&v), "buddy-1 · necesita respuesta");
     }
 }

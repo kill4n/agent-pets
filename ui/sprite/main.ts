@@ -35,9 +35,10 @@ async function doLoadManifest(m: Manifest) {
   manifest = m;
   const [fw, fh] = m.frameSize;
   canvas.width = fw; canvas.height = fh;
-  canvas.style.width = `${fw * m.scale}px`; canvas.style.height = `${fh * m.scale}px`;
+  const zoom = m.zoom ?? 1;
+  canvas.style.width = `${Math.round(fw * m.scale * zoom)}px`; canvas.style.height = `${Math.round(fh * m.scale * zoom)}px`;
   // the speech bubble sits right above the sprite; tell CSS how tall the sprite is
-  document.documentElement.style.setProperty("--sprite-h", `${fh * m.scale}px`);
+  document.documentElement.style.setProperty("--sprite-h", `${Math.round(fh * m.scale * zoom)}px`);
   document.documentElement.style.setProperty("--label-h", `${m.labelH ?? 0}px`);
   nameEl.classList.toggle("hidden", !(m.labelH > 0));
   sheets = new Map();
@@ -129,7 +130,7 @@ async function main() {
     const m: Manifest = await (await fetch("/assets-dev/pack.json")).json();
     for (const a of Object.values(m.animations)) a.loop ??= true; // Rust applies this serde default; raw pack.json omits it
     await loadManifest(m);
-    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null, job_id: null,
+    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null, job_id: null, parent: null,
       visible: mock as AgentView["visible"], waiting_for: mock === "needs_input" ? "permission prompt" : null,
       peer: mock === "waiting_peer" ? "buddy-2" : null, since_secs: 0 });
     return;
@@ -153,7 +154,7 @@ async function main() {
     }, 300);
   });
   // null when no valid pack is installed: stay blank until set_pack emits "manifest"
-  const m = await invoke<Manifest | null>("get_manifest");
+  const m = await invoke<Manifest | null>("get_manifest", { key });
   if (m) await loadManifest(m);
   const agents = await invoke<AgentView[]>("list_agents");
   const mine = agents.find((a) => a.key === key);

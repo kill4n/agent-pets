@@ -104,7 +104,7 @@ mod tests {
     use std::time::Duration;
 
     fn hook(event: &str) -> HookEvent {
-        HookEvent { event: event.into(), cwd: None, tool_name: None, notification_type: None, recipient: None }
+        HookEvent { event: event.into(), cwd: None, tool_name: None, notification_type: None, recipient: None, agent_id: None, agent_type: None }
     }
     fn fresh() -> (AgentState, Instant) {
         let now = Instant::now();

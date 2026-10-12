@@ -26,11 +26,46 @@ pub fn effective_manifest(m: &Manifest, size: SpriteSize, show_name: bool) -> Ma
     e
 }
 
+/// Label height for subagent sprites.
+pub const CHILD_LABEL_H: u32 = 14;
+
+/// Whether a window label belongs to a subagent sprite (its key contains the `/agent_id` suffix,
+/// which `label_for` turns into `_`, so children are marked explicitly).
+pub fn is_child_label(label: &str) -> bool { label.starts_with("sprite-sub-") }
+
+pub fn label_for_view(v: &AgentView) -> String {
+    if v.parent.is_some() { format!("sprite-sub-{}", v.key.replace([':', '/', '.'], "_")) } else { label_for(&v.key) }
+}
+
+/// The manifest a subagent sprite uses: half the parent's scale (never below 1) and a smaller label.
+pub fn child_manifest(m: &Manifest) -> Manifest {
+    let mut c = m.clone();
+    if m.scale >= 2 { c.scale = m.scale / 2; } else { c.zoom = m.zoom * 0.5; }
+    c.label_h = if m.label_h > 0 { CHILD_LABEL_H } else { 0 };
+    c
+}
+
+/// The manifest for a given window label.
+pub fn manifest_for_label(m: &Manifest, label: &str) -> Manifest {
+    if is_child_label(label) { child_manifest(m) } else { m.clone() }
+}
+
+/// Where the `index`-th child of a parent at `parent` (collapsed size `pw`×`ph`) goes: hugging the
+/// parent's side, alternating right/left, bottoms aligned, stacking outwards; kept on screen.
+pub fn child_position(parent: Pos, pw: i32, ph: i32, cw: i32, ch: i32, index: usize, screen_w: i32) -> Pos {
+    const GAP: i32 = 6;
+    let slot = (index / 2) as i32;
+    let right = index % 2 == 0;
+    let y = (parent.y + ph - ch).max(0);
+    let x = if right { parent.x + pw + GAP + slot * (cw + GAP) } else { parent.x - GAP - cw - slot * (cw + GAP) };
+    Pos { x: x.clamp(0, (screen_w - cw).max(0)), y }
+}
+
 /// Window size while the bubble is closed: the sprite plus its name label (same width), so clicks
 /// around it fall through.
 pub fn collapsed_size(m: &Manifest) -> (f64, f64) {
     let [w, h] = m.frame_size;
-    ((w * m.scale) as f64, (h * m.scale + m.label_h) as f64)
+    (((w * m.scale) as f64 * m.zoom).round(), ((h * m.scale) as f64 * m.zoom).round() + m.label_h as f64)
 }
 
 /// Window size while the bubble is open: wide enough for the text, taller by the bubble area.
@@ -94,7 +129,7 @@ pub fn apply_changes(app: &AppHandle, changes: &[Change], manifest: Option<&Mani
     for ch in changes {
         match ch {
             Change::Added(v) | Change::Updated(v) => {
-                let label = label_for(&v.key);
+                let label = label_for_view(v);
                 if app.get_webview_window(&label).is_some() {
                     let should_move = placement.lock().unwrap().renamed(&label, v);
                     if should_move { move_to_saved(app, &label, v, positions); }
@@ -104,9 +139,10 @@ pub fn apply_changes(app: &AppHandle, changes: &[Change], manifest: Option<&Mani
                 push_state(app, v);
             }
             Change::Removed(key) => {
-                let label = label_for(key);
-                placement.lock().unwrap().removed(&label);
-                if let Some(w) = app.get_webview_window(&label) { let _ = w.close(); }
+                for label in [label_for(key), format!("sprite-sub-{}", key.replace([':', '/', '.'], "_"))] {
+                    placement.lock().unwrap().removed(&label);
+                    if let Some(w) = app.get_webview_window(&label) { let _ = w.close(); }
+                }
             }
         }
     }
@@ -114,7 +150,7 @@ pub fn apply_changes(app: &AppHandle, changes: &[Change], manifest: Option<&Mani
 
 /// Emit only to this agent's window: `emit` on a window broadcasts to every webview.
 fn push_state(app: &AppHandle, v: &AgentView) {
-    let label = label_for(&v.key);
+    let label = label_for_view(v);
     if app.get_webview_window(&label).is_some() {
         let _ = app.emit_to(EventTarget::webview_window(label), "agent-state", v);
     }
@@ -134,17 +170,35 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
                  placement: &Mutex<Placement>) {
     // a gone agent never gets a new window (e.g. a SessionEnd for an unknown session)
     if v.visible == Visible::Gone { return; }
-    let label = label_for(&v.key);
+    let label = label_for_view(v);
     if app.get_webview_window(&label).is_some() { return; }
+    let m_main = manifest;
+    let child = child_manifest(m_main);
+    let manifest = if v.parent.is_some() { &child } else { m_main };
     let (w, h) = collapsed_size(manifest);
-    let saved = positions.lock().unwrap().get(&v.host, &v.name);
-    let pos = saved.unwrap_or_else(|| {
-        let (sw, sh) = app.primary_monitor().ok().flatten()
-            .map(|m| { let s = m.size(); let f = m.scale_factor(); ((s.width as f64 / f) as i32, (s.height as f64 / f) as i32) })
-            .unwrap_or((1440, 900));
-        let index = app.webview_windows().keys().filter(|k| k.starts_with("sprite-")).count();
-        positions.lock().unwrap().cascade(index, sw, sh, w as i32, h as i32)
-    });
+    let (sw, sh) = app.primary_monitor().ok().flatten()
+        .map(|m| { let s = m.size(); let f = m.scale_factor(); ((s.width as f64 / f) as i32, (s.height as f64 / f) as i32) })
+        .unwrap_or((1440, 900));
+    let pos = if let Some(parent_key) = &v.parent {
+        // subagents hug their parent: no saved position, no cascade
+        let plabel = label_for(parent_key);
+        let parent_win = app.get_webview_window(&plabel);
+        let parent_pos = parent_win.as_ref().and_then(current_pos).map(|cur| {
+            let open = placement.lock().unwrap().is_open(&plabel);
+            collapsed_origin(open, cur, m_main)
+        });
+        let siblings = app.webview_windows().keys().filter(|k| is_child_label(k) && k.starts_with(&format!("sprite-sub-{}_", parent_key.replace([':', '/', '.'], "_")))).count();
+        match parent_pos {
+            Some(pp) => { let (pw, ph) = collapsed_size(m_main); child_position(pp, pw as i32, ph as i32, w as i32, h as i32, siblings, sw) }
+            None => positions.lock().unwrap().cascade(siblings, sw, sh, w as i32, h as i32),
+        }
+    } else {
+        let saved = positions.lock().unwrap().get(&v.host, &v.name);
+        saved.unwrap_or_else(|| {
+            let index = app.webview_windows().keys().filter(|k| k.starts_with("sprite-") && !is_child_label(k)).count();
+            positions.lock().unwrap().cascade(index, sw, sh, w as i32, h as i32)
+        })
+    };
     let url = WebviewUrl::App(format!("sprite/index.html?key={}", urlencoding(&v.key)).into());
     let built = WebviewWindowBuilder::new(app, &label, url)
         .title(&v.name).inner_size(w, h).position(pos.x as f64, pos.y as f64)
@@ -185,8 +239,9 @@ pub fn resize_all(app: &AppHandle, old: &Manifest, new: &Manifest, placement: &M
         if !label.starts_with("sprite-") { continue; }
         let open = placement.lock().unwrap().is_open(&label);
         let Some(cur) = current_pos(&w) else { continue };
-        let collapsed = collapsed_origin(open, cur, old);
-        let (pos, (sw, sh)) = rect_for(open, collapsed, new);
+        let (old_m, new_m) = (manifest_for_label(old, &label), manifest_for_label(new, &label));
+        let collapsed = collapsed_origin(open, cur, &old_m);
+        let (pos, (sw, sh)) = rect_for(open, collapsed, &new_m);
         if let Err(e) = w.set_size(LogicalSize::new(sw, sh)) { log::warn!("resize {label}: {e}"); }
         if let Err(e) = w.set_position(LogicalPosition::new(pos.x as f64, pos.y as f64)) { log::warn!("move {label}: {e}"); }
     }
@@ -209,7 +264,7 @@ mod tests {
 
     fn view(name: &str) -> AgentView {
         AgentView { key: "h:abcdef123456".into(), host: "h".into(), session_id: "abcdef123456".into(),
-            name: name.into(), cwd: None, pid: None, job_id: None, visible: Visible::Working, waiting_for: None, peer: None, since_secs: 0 }
+            name: name.into(), cwd: None, pid: None, job_id: None, parent: None, visible: Visible::Working, waiting_for: None, peer: None, since_secs: 0 }
     }
 
     #[test] fn rename_from_provisional_triggers_move_once() {
@@ -272,6 +327,37 @@ mod tests {
         assert_eq!(bubble_offset(&e), (14.0, BUBBLE_H), "label never shifts the sprite");
         let hidden = effective_manifest(&m, SpriteSize::Normal, false);
         assert_eq!(collapsed_size(&hidden), (192.0, 192.0));
+    }
+
+    #[test] fn child_manifest_is_half_scale_with_small_label() {
+        let m = effective_manifest(&manifest(96, 2), SpriteSize::Normal, true);
+        let c = child_manifest(&m);
+        assert_eq!(c.scale, 1); assert_eq!(c.label_h, CHILD_LABEL_H);
+        assert_eq!(collapsed_size(&c), (96.0, 96.0 + CHILD_LABEL_H as f64));
+        // a parent already at scale 1 gets a half-size child through a fractional zoom
+        let tiny = child_manifest(&effective_manifest(&manifest(96, 1), SpriteSize::Normal, false));
+        assert_eq!((tiny.scale, tiny.zoom), (1, 0.5));
+        assert_eq!(collapsed_size(&tiny), (48.0, 48.0));
+        assert_eq!(tiny.label_h, 0);
+    }
+
+    #[test] fn children_hug_their_parent_alternating_sides() {
+        let parent = Pos { x: 500, y: 300 };
+        let (pw, ph, cw, ch) = (192, 210, 96, 110);
+        assert_eq!(child_position(parent, pw, ph, cw, ch, 0, 1440), Pos { x: 500 + 192 + 6, y: 300 + 210 - 110 });
+        assert_eq!(child_position(parent, pw, ph, cw, ch, 1, 1440), Pos { x: 500 - 6 - 96, y: 400 });
+        assert_eq!(child_position(parent, pw, ph, cw, ch, 2, 1440), Pos { x: 500 + 192 + 6 + 102, y: 400 });
+        assert_eq!(child_position(Pos { x: 10, y: 300 }, pw, ph, cw, ch, 1, 1440).x, 0, "clamped to the left edge");
+        assert_eq!(child_position(Pos { x: 1400, y: 300 }, pw, ph, cw, ch, 0, 1440).x, 1440 - 96, "clamped to the right edge");
+    }
+
+    #[test] fn child_labels_are_distinct_and_recognisable() {
+        let mut v = view("buddy-7");
+        assert_eq!(label_for_view(&v), label_for(&v.key));
+        v.parent = Some("h:abcdef123456".into()); v.key = "h:abcdef123456/ag-1".into();
+        assert!(is_child_label(&label_for_view(&v)));
+        assert!(!is_child_label(&label_for("h:abcdef123456")));
+        assert_eq!(manifest_for_label(&manifest(96, 2), &label_for_view(&v)).scale, 1);
     }
 
     #[test] fn collapsed_window_is_exactly_the_sprite() {
