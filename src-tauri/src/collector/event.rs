@@ -50,6 +50,8 @@ pub struct PolledAgent {
     pub state: Option<PollState>,
     /// OS pid of the interactive session (absent for background jobs)
     pub pid: Option<u32>,
+    /// Short job id of a daemon-hosted (background) session
+    pub id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -162,6 +164,8 @@ mod tests {
         assert_eq!(list[0].kind, PollKind::Interactive);
         assert_eq!(list[0].pid, Some(1));
         assert_eq!(list[1].pid, None, "background jobs have no pid");
+        assert_eq!(list[1].id.as_deref(), Some("x"));
+        assert_eq!(list[0].id, None);
         assert_eq!(list[1].state, Some(PollState::Blocked));
         assert_eq!(list[1].kind, PollKind::Background);
         assert_eq!(list[2].waiting_for.as_deref(), Some("permission prompt"));
