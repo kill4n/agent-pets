@@ -77,6 +77,10 @@ fn apply_manifest(handle: &AppHandle, app: &App, old: Option<&Manifest>, new: &M
 #[tauri::command(async)]
 pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result<(), String> {
     let size = SpriteSize::parse(&size).ok_or_else(|| format!("unknown size: {size}"))?;
+    do_set_size(&handle, &app, size)
+}
+
+pub fn do_set_size(handle: &AppHandle, app: &App, size: SpriteSize) -> Result<(), String> {
     let pack = {
         let mut cfg = app.config.lock().unwrap();
         cfg.size = size;
@@ -86,13 +90,20 @@ pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result
     let loaded = load_pack(&app.packs_root.join(&pack)).map_err(|e| e.to_string())?;
     let m = effective_manifest(&loaded, size);
     let old = app.manifest.lock().unwrap().replace(m.clone());
-    apply_manifest(&handle, &app, old.as_ref(), &m);
+    apply_manifest(handle, app, old.as_ref(), &m);
+    crate::tray::refresh_menu(handle, app);
     Ok(())
 }
 
 /// Turn idle strolling on or off.
 #[tauri::command]
-pub fn set_wander(app: State<Arc<App>>, enabled: bool, after_secs: u32) -> Result<(), String> {
+pub fn set_wander(handle: AppHandle, app: State<Arc<App>>, enabled: bool, after_secs: u32) -> Result<(), String> {
+    do_set_wander(&app, enabled, after_secs)?;
+    crate::tray::refresh_menu(&handle, &app);
+    Ok(())
+}
+
+pub fn do_set_wander(app: &App, enabled: bool, after_secs: u32) -> Result<(), String> {
     if !(5..=3600).contains(&after_secs) { return Err("el tiempo debe estar entre 5 y 3600 segundos".into()); }
     let mut cfg = app.config.lock().unwrap();
     cfg.wander = enabled;
@@ -103,7 +114,9 @@ pub fn set_wander(app: State<Arc<App>>, enabled: bool, after_secs: u32) -> Resul
 
 /// Bring the terminal hosting this agent's session to the front (double-click on the sprite).
 #[tauri::command(async)]
-pub fn focus_terminal(app: State<Arc<App>>, key: String) -> Result<(), String> {
+pub fn focus_terminal(app: State<Arc<App>>, key: String) -> Result<(), String> { do_focus_terminal(&app, &key) }
+
+pub fn do_focus_terminal(app: &App, key: &str) -> Result<(), String> {
     let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key)
         .ok_or("sesión desconocida")?;
     if view.pid.is_none() && view.job_id.is_none() { return Err("esta sesión no tiene un terminal asociado".into()); }
@@ -123,7 +136,9 @@ pub fn set_bubble(handle: AppHandle, app: State<Arc<App>>, key: String, open: bo
 pub fn list_agents(app: State<Arc<App>>) -> Vec<AgentView> { app.store.lock().unwrap().views(Instant::now()) }
 
 #[tauri::command]
-pub fn get_status(app: State<Arc<App>>) -> Status {
+pub fn get_status(app: State<Arc<App>>) -> Status { status_of(&app) }
+
+pub fn status_of(app: &App) -> Status {
     let cfg = app.config.lock().unwrap().clone();
     let settings = std::fs::read_to_string(installer::default_settings_path()).ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
@@ -133,22 +148,29 @@ pub fn get_status(app: State<Arc<App>>) -> Status {
 }
 
 #[tauri::command]
-pub fn install_hooks(app: State<Arc<App>>) -> Result<(), String> {
-    let cfg = app.config.lock().unwrap().clone();
-    installer::install(&installer::default_settings_path(), &cfg.hook_url(), &cfg.token).map_err(|e| e.to_string())
+pub fn install_hooks(handle: AppHandle, app: State<Arc<App>>) -> Result<(), String> {
+    do_set_hooks(&app, true)?; crate::tray::refresh_menu(&handle, &app); Ok(())
 }
 
 #[tauri::command]
-pub fn uninstall_hooks(app: State<Arc<App>>) -> Result<(), String> {
+pub fn uninstall_hooks(handle: AppHandle, app: State<Arc<App>>) -> Result<(), String> {
+    do_set_hooks(&app, false)?; crate::tray::refresh_menu(&handle, &app); Ok(())
+}
+
+pub fn do_set_hooks(app: &App, install: bool) -> Result<(), String> {
     let cfg = app.config.lock().unwrap().clone();
-    installer::uninstall(&installer::default_settings_path(), &cfg.hook_url()).map_err(|e| e.to_string())
+    let path = installer::default_settings_path();
+    let r = if install { installer::install(&path, &cfg.hook_url(), &cfg.token) } else { installer::uninstall(&path, &cfg.hook_url()) };
+    r.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn list_pack_names(app: State<Arc<App>>) -> Vec<PackInfo> { list_pack_infos(&app.packs_root) }
 
 #[tauri::command]
-pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result<(), String> {
+pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result<(), String> { do_set_pack(&handle, &app, name) }
+
+pub fn do_set_pack(handle: &AppHandle, app: &App, name: String) -> Result<(), String> {
     if !is_single_normal(&name) || !list_packs(&app.packs_root).contains(&name) {
         return Err(format!("unknown pack: {name}"));
     }
@@ -162,7 +184,8 @@ pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result
     let m = effective_manifest(&loaded, size);
     let old = app.manifest.lock().unwrap().replace(m.clone());
     app.pack_warning.send_replace(None);
-    apply_manifest(&handle, &app, old.as_ref(), &m);
+    apply_manifest(handle, app, old.as_ref(), &m);
+    crate::tray::refresh_menu(handle, app);
     Ok(())
 }
 
