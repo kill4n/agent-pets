@@ -5,7 +5,7 @@ use crate::state::Visible;
 use crate::windows::positions::{Pos, Positions};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, EventTarget, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, EventTarget, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub fn label_for(key: &str) -> String { format!("sprite-{}", key.replace([':', '/', '.'], "_")) }
 
@@ -14,9 +14,37 @@ pub const MIN_WINDOW_W: f64 = 220.0;
 /// Room above the sprite for the speech bubble and its tail.
 pub const BUBBLE_H: f64 = 84.0;
 
-pub fn window_size(m: &Manifest) -> (f64, f64) {
+/// Window size while the bubble is closed: exactly the sprite, so clicks around it fall through.
+pub fn collapsed_size(m: &Manifest) -> (f64, f64) {
     let [w, h] = m.frame_size;
-    (((w * m.scale) as f64).max(MIN_WINDOW_W), (h * m.scale) as f64 + BUBBLE_H)
+    ((w * m.scale) as f64, (h * m.scale) as f64)
+}
+
+/// Window size while the bubble is open: wide enough for the text, taller by the bubble area.
+pub fn window_size(m: &Manifest) -> (f64, f64) {
+    let (w, h) = collapsed_size(m);
+    (w.max(MIN_WINDOW_W), h + BUBBLE_H)
+}
+
+/// How far the open window's top-left sits from the collapsed one's, so the sprite stays put on screen.
+pub fn bubble_offset(m: &Manifest) -> (f64, f64) {
+    let (cw, _) = collapsed_size(m);
+    let (ow, _) = window_size(m);
+    (((ow - cw) / 2.0).round(), BUBBLE_H)
+}
+
+/// Outer position + size for a window whose collapsed (sprite) rect starts at `collapsed`.
+pub fn rect_for(open: bool, collapsed: Pos, m: &Manifest) -> (Pos, (f64, f64)) {
+    if !open { return (collapsed, collapsed_size(m)); }
+    let (dx, dy) = bubble_offset(m);
+    (Pos { x: collapsed.x - dx as i32, y: collapsed.y - dy as i32 }, window_size(m))
+}
+
+/// Given the window's current outer position and whether its bubble is open, the collapsed rect origin.
+pub fn collapsed_origin(open: bool, current: Pos, m: &Manifest) -> Pos {
+    if !open { return current; }
+    let (dx, dy) = bubble_offset(m);
+    Pos { x: current.x + dx as i32, y: current.y + dy as i32 }
 }
 
 /// Per-window bookkeeping for applying the saved `host+name` position once the real name is known.
@@ -26,12 +54,19 @@ pub struct Placement {
     dragged: HashSet<String>,
     /// last name each window was mirrored with
     names: HashMap<String, String>,
+    /// labels whose speech bubble is open (window expanded)
+    open: HashSet<String>,
 }
 
 impl Placement {
     pub fn created(&mut self, label: &str, name: &str) { self.names.insert(label.into(), name.into()); }
     pub fn mark_dragged(&mut self, label: &str) { self.dragged.insert(label.into()); }
-    pub fn removed(&mut self, label: &str) { self.dragged.remove(label); self.names.remove(label); }
+    pub fn removed(&mut self, label: &str) { self.dragged.remove(label); self.names.remove(label); self.open.remove(label); }
+    pub fn is_open(&self, label: &str) -> bool { self.open.contains(label) }
+    /// Returns the previous open state.
+    pub fn set_open(&mut self, label: &str, open: bool) -> bool {
+        if open { !self.open.insert(label.into()) } else { self.open.remove(label) }
+    }
     /// Record `v.name` for `label`; true when the window should now move to the saved position of
     /// the real name: the name just changed from the provisional one and the user has not dragged it.
     pub fn renamed(&mut self, label: &str, v: &AgentView) -> bool {
@@ -88,7 +123,7 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
     if v.visible == Visible::Gone { return; }
     let label = label_for(&v.key);
     if app.get_webview_window(&label).is_some() { return; }
-    let (w, h) = window_size(manifest);
+    let (w, h) = collapsed_size(manifest);
     let saved = positions.lock().unwrap().get(&v.host, &v.name);
     let pos = saved.unwrap_or_else(|| {
         let (sw, sh) = app.primary_monitor().ok().flatten()
@@ -107,6 +142,27 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
         Ok(_) => placement.lock().unwrap().created(&label, &v.name),
         Err(e) => log::error!("cannot create sprite window: {e}"),
     }
+}
+
+/// Current outer position of a window in logical pixels.
+fn current_pos(w: &tauri::WebviewWindow) -> Option<Pos> {
+    let p = w.outer_position().ok()?;
+    let f = w.scale_factor().ok()?;
+    Some(Pos { x: (p.x as f64 / f).round() as i32, y: (p.y as f64 / f).round() as i32 })
+}
+
+/// Expand (open) or shrink (closed) a sprite window around its sprite, which stays put on screen.
+/// Locks are only held to flip the flag, never across the main-thread calls.
+pub fn set_bubble(app: &AppHandle, label: &str, m: &Manifest, open: bool, placement: &Mutex<Placement>) -> Result<(), String> {
+    let w = app.get_webview_window(label).ok_or_else(|| format!("no window {label}"))?;
+    let was_open = placement.lock().unwrap().set_open(label, open);
+    if was_open == open { return Ok(()); }
+    let cur = current_pos(&w).ok_or("cannot read window position")?;
+    let collapsed = collapsed_origin(was_open, cur, m);
+    let (pos, (sw, sh)) = rect_for(open, collapsed, m);
+    w.set_size(LogicalSize::new(sw, sh)).map_err(|e| e.to_string())?;
+    w.set_position(LogicalPosition::new(pos.x as f64, pos.y as f64)).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn save_position(positions: &mut Positions, host: &str, name: &str, x: i32, y: i32) {
@@ -171,6 +227,35 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "name": "t", "frameSize": [frame, frame], "scale": scale, "animations": {}
         })).unwrap()
+    }
+
+    #[test] fn collapsed_window_is_exactly_the_sprite() {
+        assert_eq!(collapsed_size(&manifest(96, 2)), (192.0, 192.0));
+        assert_eq!(collapsed_size(&manifest(32, 4)), (128.0, 128.0));
+    }
+
+    #[test] fn open_rect_keeps_the_sprite_in_place() {
+        let m = manifest(96, 2); // collapsed 192x192, open 220x276 -> offset (14, 84)
+        let c = Pos { x: 500, y: 400 };
+        let (p, size) = rect_for(true, c, &m);
+        assert_eq!(size, (220.0, 276.0));
+        assert_eq!(p, Pos { x: 486, y: 316 });
+        assert_eq!(collapsed_origin(true, p, &m), c, "round trip");
+        assert_eq!(rect_for(false, c, &m), (c, (192.0, 192.0)));
+        assert_eq!(collapsed_origin(false, c, &m), c);
+        let wide = manifest(64, 4); // 256 wide: no horizontal offset
+        assert_eq!(bubble_offset(&wide), (0.0, BUBBLE_H));
+    }
+
+    #[test] fn placement_tracks_open_state() {
+        let mut p = Placement::default();
+        assert!(!p.is_open("w"));
+        assert!(!p.set_open("w", true), "was closed");
+        assert!(p.is_open("w"));
+        assert!(p.set_open("w", true), "already open");
+        assert!(p.set_open("w", false), "was open");
+        p.set_open("w", true); p.removed("w");
+        assert!(!p.is_open("w"), "removal clears open");
     }
 
     #[test] fn window_is_at_least_bubble_wide_and_reserves_bubble_height() {
