@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
+fn default_true() -> bool { true }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SpriteSize { Small, #[default] Normal, Large }
@@ -25,6 +27,9 @@ pub struct Config {
     /// On-screen sprite size, applied on top of the pack's own `scale`.
     #[serde(default)]
     pub size: SpriteSize,
+    /// Idle sprites take short strolls and come back home.
+    #[serde(default = "default_true")]
+    pub wander: bool,
     /// Absolute path to the `claude` binary; overrides PATH lookup (GUI apps get a minimal PATH).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
@@ -32,7 +37,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, claude_path: None }
+        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, wander: true, claude_path: None }
     }
 }
 
@@ -116,8 +121,10 @@ mod tests {
         std::fs::write(&p, r#"{"port":7433,"token":"0123456789abcdef0123456789abcdef","pack":"default","bind_all":false}"#).unwrap();
         let mut c = Config::load(&p);
         assert_eq!(c.size, SpriteSize::Normal);
-        c.size = SpriteSize::Small; c.save(&p).unwrap();
+        assert!(c.wander, "wander defaults to on for old configs");
+        c.size = SpriteSize::Small; c.wander = false; c.save(&p).unwrap();
         assert_eq!(Config::load(&p).size, SpriteSize::Small);
+        assert!(!Config::load(&p).wander);
     }
     #[test] fn claude_path_is_optional_and_roundtrips() {
         let d = tempfile::tempdir().unwrap();

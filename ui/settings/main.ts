@@ -5,7 +5,7 @@ import type { AgentView } from "../shared/types";
 
 interface Status {
   hooks_installed: boolean; poll_error: string | null; server_error: string | null; pack_warning: string | null;
-  hook_url: string; token: string; pack: string; size: "small" | "normal" | "large";
+  hook_url: string; token: string; pack: string; size: "small" | "normal" | "large"; wander: boolean;
 }
 
 const app = document.getElementById("app")!;
@@ -49,6 +49,13 @@ function render() {
     auto.checked = autostart;
   };
 
+  const wander = el("input", undefined, { type: "checkbox", id: "wander" });
+  wander.checked = status.wander;
+  wander.onchange = async () => {
+    try { await invoke("set_wander", { enabled: wander.checked }); } catch (err) { alert(`Error: ${err}`); }
+    await refresh();
+  };
+
   const list = el("ul");
   if (agents.length === 0) list.append(el("li", "ninguno"));
   for (const a of agents) {
@@ -83,6 +90,7 @@ function render() {
     el("h2", "Sprites"),
     el("label", "Pack ", {}, packSel),
     el("label", "Tamaño ", {}, sizeSel),
+    el("label", undefined, {}, wander, " Pasear cuando están inactivos"),
     ...(status.pack_warning ? [el("p", `⚠ ${status.pack_warning}`, { class: "warn" })] : []),
     el("h2", "Sistema"),
     el("label", undefined, {}, auto, " Arrancar al iniciar sesión"),
