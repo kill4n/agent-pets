@@ -57,6 +57,7 @@ pub fn apply_poll(s: &mut AgentState, p: &PolledAgent, now: Instant) {
     s.missed_polls = 0;
     if let Some(n) = &p.name { s.name = n.clone(); }
     if p.cwd.is_some() { s.cwd = p.cwd.clone(); }
+    if p.pid.is_some() { s.pid = p.pid; }
 
     let recent_hook = s.last_hook_at.is_some_and(|t| now.duration_since(t) < HOOK_WINS_FOR);
 
@@ -110,7 +111,7 @@ mod tests {
     }
     fn polled(status: Option<PollStatus>) -> PolledAgent {
         PolledAgent { session_id: "abcdef123456".into(), name: Some("buddy-1".into()), cwd: None,
-            kind: PollKind::Interactive, status, waiting_for: None, state: None }
+            kind: PollKind::Interactive, status, waiting_for: None, state: None, pid: Some(4242) }
     }
 
     #[test] fn new_agent_has_provisional_name_and_idle() {

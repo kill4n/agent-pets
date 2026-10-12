@@ -18,6 +18,7 @@ pub struct AgentState {
     pub id: AgentId,
     pub name: String,
     pub cwd: Option<PathBuf>,
+    pub pid: Option<u32>,
     pub visible: Visible,
     pub waiting_for: Option<String>,
     pub peer: Option<String>,
@@ -35,7 +36,7 @@ pub fn provisional_name(session_id: &str) -> String { session_id.chars().take(8)
 impl AgentState {
     pub fn new(id: AgentId, now: Instant) -> Self {
         let name = provisional_name(&id.session_id);
-        Self { id, name, cwd: None, visible: Visible::Idle, waiting_for: None, peer: None,
+        Self { id, name, cwd: None, pid: None, visible: Visible::Idle, waiting_for: None, peer: None,
             subagents: 0, sent_message: false, since: now, last_hook_at: None, last_seen: now, missed_polls: 0 }
     }
 

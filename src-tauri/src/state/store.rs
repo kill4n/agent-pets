@@ -12,6 +12,7 @@ pub struct AgentView {
     pub session_id: String,
     pub name: String,
     pub cwd: Option<String>,
+    pub pid: Option<u32>,
     pub visible: Visible,
     pub waiting_for: Option<String>,
     pub peer: Option<String>,
@@ -28,7 +29,7 @@ fn fp(s: &AgentState) -> Fingerprint { Fingerprint(s.visible, s.name.clone(), s.
 fn make_view(s: &AgentState, now: Instant) -> AgentView {
     AgentView {
         key: s.id.key(), host: s.id.host.clone(), session_id: s.id.session_id.clone(),
-        name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid,
         visible: s.visible, waiting_for: s.waiting_for.clone(), peer: s.peer.clone(),
         since_secs: now.saturating_duration_since(s.since).as_secs(),
     }
@@ -92,7 +93,7 @@ impl Store {
                     mark_missed(s, now);
                     if fp(s) != before {
                         let view = AgentView { key: key.clone(), host: s.id.host.clone(), session_id: s.id.session_id.clone(),
-                            name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                            name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid,
                             visible: s.visible, waiting_for: s.waiting_for.clone(), peer: s.peer.clone(), since_secs: 0 };
                         changes.push(Change::Updated(view));
                     }
@@ -127,7 +128,7 @@ mod tests {
         AgentEvent { host: "h".into(), session_id: String::new(), at: Instant::now(),
             kind: EventKind::Snapshot(agents.iter().map(|(sid, name, st)| PolledAgent {
                 session_id: sid.to_string(), name: Some(name.to_string()), cwd: None,
-                kind: PollKind::Interactive, status: Some(*st), waiting_for: None, state: None }).collect()) }
+                kind: PollKind::Interactive, status: Some(*st), waiting_for: None, state: None, pid: Some(1) }).collect()) }
     }
 
     #[test] fn hook_before_poll_creates_provisional_then_poll_renames() {
@@ -177,7 +178,7 @@ mod tests {
     fn bg_snap(sid: &str, state: PollState) -> AgentEvent {
         AgentEvent { host: "h".into(), session_id: String::new(), at: Instant::now(),
             kind: EventKind::Snapshot(vec![PolledAgent { session_id: sid.into(), name: Some("job".into()), cwd: None,
-                kind: PollKind::Background, status: None, waiting_for: None, state: Some(state) }]) }
+                kind: PollKind::Background, status: None, waiting_for: None, state: Some(state), pid: None }]) }
     }
 
     #[test] fn finished_background_agent_is_not_recreated_after_sweep() {
