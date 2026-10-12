@@ -33,6 +33,16 @@ Revisión visual sin Claude Code: `npm run dev` y abre
 Packs incluidos: `default` (Slime) y `fox` (Zorro). Se cambian desde Ajustes; el campo `name`
 del manifiesto es lo que muestra el desplegable.
 
+## Releases
+Cada tag `vX.Y.Z` dispara el workflow `release.yml`, que compila para macOS (Apple Silicon e Intel),
+Windows y Linux y publica una GitHub Release con los instaladores. Para firmar y notarizar en macOS
+añade los secretos `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+`APPLE_ID`, `APPLE_PASSWORD` y `APPLE_TEAM_ID` al repositorio; sin ellos las builds salen sin firmar.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
 ## Cómo funciona
 - Hooks HTTP de Claude Code → `POST 127.0.0.1:7433/hook` (push inmediato).
 - Poll de `claude agents --json --all` cada 2.5 s (reconciliación).
