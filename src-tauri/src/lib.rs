@@ -1,6 +1,7 @@
 pub mod collector;
 pub mod commands;
 pub mod config;
+pub mod focus;
 pub mod installer;
 pub mod packs;
 pub mod state;
@@ -159,7 +160,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_manifest, commands::get_pack_url, commands::report_position, commands::list_agents,
             commands::get_status, commands::install_hooks, commands::uninstall_hooks, commands::list_pack_names,
-            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size
+            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal
         ])
         .build(tauri::generate_context!())
         .expect("error while building buddy")
