@@ -189,7 +189,8 @@ fn mirror(handle: &tauri::AppHandle, st: &Arc<App>, changes: Vec<Change>) {
 /// Once a second: let idle sprites stroll, and bring strolling ones home when they get busy.
 fn wander_tick(handle: &tauri::AppHandle, st: &Arc<App>) {
     use windows::wander::{step_position, Decision, STROLL_STEP, STROLL_STEPS};
-    if !st.config.lock().unwrap().wander { return; }
+    let (enabled, min_idle) = { let c = st.config.lock().unwrap(); (c.wander, Duration::from_secs(c.wander_after_secs as u64)) };
+    if !enabled { return; }
     let Some(m) = st.manifest.lock().unwrap().clone() else { return };
     let now = Instant::now();
     let views = st.store.lock().unwrap().views(now);
@@ -204,7 +205,7 @@ fn wander_tick(handle: &tauri::AppHandle, st: &Arc<App>) {
         let idle_for = strollable.then(|| Duration::from_secs(v.since_secs));
         let Some(cur) = windows::manager::current_pos(&w) else { continue };
         let pos = windows::manager::collapsed_origin(open, cur, &m);
-        let decision = st.wanderers.lock().unwrap().tick(&label, idle_for, pos, screen_w, sprite_w as i32, now);
+        let decision = st.wanderers.lock().unwrap().tick(&label, idle_for, min_idle, pos, screen_w, sprite_w as i32, now);
         let (from, to, away) = match decision {
             Decision::Nothing => continue,
             Decision::Stroll { from, to } => (from, to, true),

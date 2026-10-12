@@ -18,6 +18,7 @@ pub struct Status {
     pub pack_warning: Option<String>, pub hook_url: String, pub token: String, pub pack: String,
     pub size: SpriteSize,
     pub wander: bool,
+    pub wander_after_secs: u32,
 }
 
 #[tauri::command]
@@ -91,10 +92,13 @@ pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result
 
 /// Turn idle strolling on or off.
 #[tauri::command]
-pub fn set_wander(app: State<Arc<App>>, enabled: bool) {
+pub fn set_wander(app: State<Arc<App>>, enabled: bool, after_secs: u32) -> Result<(), String> {
+    if !(5..=3600).contains(&after_secs) { return Err("el tiempo debe estar entre 5 y 3600 segundos".into()); }
     let mut cfg = app.config.lock().unwrap();
     cfg.wander = enabled;
+    cfg.wander_after_secs = after_secs;
     if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
+    Ok(())
 }
 
 /// Bring the terminal hosting this agent's session to the front (double-click on the sprite).
@@ -125,7 +129,7 @@ pub fn get_status(app: State<Arc<App>>) -> Status {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
     Status { hooks_installed: installer::is_installed(&settings, &cfg.hook_url()),
              poll_error: app.poll_error.borrow().clone(), server_error: app.server_error.borrow().clone(),
-             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander }
+             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander, wander_after_secs: cfg.wander_after_secs }
 }
 
 #[tauri::command]
