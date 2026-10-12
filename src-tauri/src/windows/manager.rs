@@ -204,7 +204,7 @@ mod tests {
 
     fn view(name: &str) -> AgentView {
         AgentView { key: "h:abcdef123456".into(), host: "h".into(), session_id: "abcdef123456".into(),
-            name: name.into(), cwd: None, visible: Visible::Working, waiting_for: None, peer: None, since_secs: 0 }
+            name: name.into(), cwd: None, pid: None, visible: Visible::Working, waiting_for: None, peer: None, since_secs: 0 }
     }
 
     #[test] fn rename_from_provisional_triggers_move_once() {
