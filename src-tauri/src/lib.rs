@@ -178,6 +178,7 @@ pub fn run() {
 /// Mirror store changes into sprite windows and refresh the settings window.
 fn mirror(handle: &tauri::AppHandle, st: &Arc<App>, changes: Vec<Change>) {
     if changes.is_empty() { return; }
+    tray::refresh_menu(handle, st);
     for ch in &changes {
         if let Change::Removed(key) = ch { st.wanderers.lock().unwrap().remove(&windows::manager::label_for(key)); }
     }
