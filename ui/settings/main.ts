@@ -5,7 +5,7 @@ import type { AgentView } from "../shared/types";
 
 interface Status {
   hooks_installed: boolean; poll_error: string | null; server_error: string | null; pack_warning: string | null;
-  hook_url: string; token: string; pack: string; size: "small" | "normal" | "large"; wander: boolean; wander_after_secs: number;
+  hook_url: string; token: string; pack: string; size: "small" | "normal" | "large"; wander: boolean; wander_after_secs: number; show_name: boolean;
 }
 
 const app = document.getElementById("app")!;
@@ -49,6 +49,12 @@ function render() {
     auto.checked = autostart;
   };
 
+  const showName = el("input", undefined, { type: "checkbox", id: "show-name" });
+  showName.checked = status.show_name;
+  showName.onchange = async () => {
+    try { await invoke("set_show_name", { enabled: showName.checked }); } catch (err) { alert(`Error: ${err}`); }
+    await refresh();
+  };
   const wander = el("input", undefined, { type: "checkbox", id: "wander" });
   wander.checked = status.wander;
   const wanderAfter = el("input", undefined, { type: "number", id: "wander-after", min: "5", max: "3600", step: "5", style: "width:5em" });
@@ -95,6 +101,7 @@ function render() {
     el("h2", "Sprites"),
     el("label", "Pack ", {}, packSel),
     el("label", "Tamaño ", {}, sizeSel),
+    el("label", undefined, {}, showName, " Mostrar nombre de la sesión"),
     el("label", undefined, {}, wander, " Pasear cuando están inactivos"),
     el("label", "Empezar a pasear tras ", {}, wanderAfter, " segundos inactivo"),
     ...(status.pack_warning ? [el("p", `⚠ ${status.pack_warning}`, { class: "warn" })] : []),
