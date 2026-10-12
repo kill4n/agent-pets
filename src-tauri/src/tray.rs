@@ -91,6 +91,7 @@ fn build_menu(app: &AppHandle, st: &App) -> tauri::Result<Menu<tauri::Wry>> {
         size_menu.append(&CheckMenuItem::with_id(app, id, size_label(s), true, s == status.size, None::<&str>)?)?;
     }
 
+    let name_item = CheckMenuItem::with_id(app, "show_name:toggle", "Mostrar nombre de la sesión", true, status.show_name, None::<&str>)?;
     let wander_item = CheckMenuItem::with_id(app, "wander:toggle", "Pasear cuando están inactivos", true, status.wander, None::<&str>)?;
     let wander_after = Submenu::with_id(app, "wander_after", "Pasear tras", true)?;
     let mut choices: Vec<u32> = WANDER_AFTER_CHOICES.to_vec();
@@ -110,7 +111,7 @@ fn build_menu(app: &AppHandle, st: &App) -> tauri::Result<Menu<tauri::Wry>> {
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
         Box::new(status_item), Box::new(hooks_item), Box::new(PredefinedMenuItem::separator(app)?),
         Box::new(agents_menu), Box::new(PredefinedMenuItem::separator(app)?),
-        Box::new(pack_menu), Box::new(size_menu), Box::new(wander_item), Box::new(wander_after), Box::new(autostart_item),
+        Box::new(pack_menu), Box::new(size_menu), Box::new(name_item), Box::new(wander_item), Box::new(wander_after), Box::new(autostart_item),
         Box::new(PredefinedMenuItem::separator(app)?), Box::new(advanced), Box::new(quit),
     ];
     if let Some(w) = status.pack_warning.as_deref() {
@@ -141,6 +142,10 @@ fn on_menu(app: &AppHandle, id: &str) {
         "hooks:toggle" => {
             let installed = commands::status_of(&st).hooks_installed;
             commands::do_set_hooks(&st, !installed)
+        }
+        "show_name:toggle" => {
+            let enabled = st.config.lock().unwrap().show_name;
+            commands::do_set_show_name(app, &st, !enabled)
         }
         "wander:toggle" => {
             let (enabled, secs) = { let c = st.config.lock().unwrap(); (c.wander, c.wander_after_secs) };
@@ -192,7 +197,7 @@ mod tests {
     use super::*;
     fn status(hooks: bool, poll: Option<&str>, server: Option<&str>) -> Status {
         Status { hooks_installed: hooks, poll_error: poll.map(Into::into), server_error: server.map(Into::into), pack_warning: None,
-            hook_url: "u".into(), token: "t".into(), pack: "default".into(), size: SpriteSize::Normal, wander: true, wander_after_secs: 20 }
+            hook_url: "u".into(), token: "t".into(), pack: "default".into(), size: SpriteSize::Normal, wander: true, wander_after_secs: 20, show_name: true }
     }
     #[test] fn tooltip_shows_first_warning() {
         assert_eq!(tooltip_text(None), "Buddy");

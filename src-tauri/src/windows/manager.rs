@@ -15,17 +15,22 @@ pub const MIN_WINDOW_W: f64 = 220.0;
 /// Room above the sprite for the speech bubble and its tail.
 pub const BUBBLE_H: f64 = 84.0;
 
-/// The pack manifest with the user's size preference applied to its `scale`.
-pub fn effective_manifest(m: &Manifest, size: SpriteSize) -> Manifest {
+/// Height of the session-name label under the sprite.
+pub const LABEL_H: u32 = 18;
+
+/// The pack manifest with the user's settings applied: size → `scale`, show_name → `label_h`.
+pub fn effective_manifest(m: &Manifest, size: SpriteSize, show_name: bool) -> Manifest {
     let mut e = m.clone();
     e.scale = size.apply(m.scale);
+    e.label_h = if show_name { LABEL_H } else { 0 };
     e
 }
 
-/// Window size while the bubble is closed: exactly the sprite, so clicks around it fall through.
+/// Window size while the bubble is closed: the sprite plus its name label (same width), so clicks
+/// around it fall through.
 pub fn collapsed_size(m: &Manifest) -> (f64, f64) {
     let [w, h] = m.frame_size;
-    ((w * m.scale) as f64, (h * m.scale) as f64)
+    ((w * m.scale) as f64, (h * m.scale + m.label_h) as f64)
 }
 
 /// Window size while the bubble is open: wide enough for the text, taller by the bubble area.
@@ -253,9 +258,20 @@ mod tests {
 
     #[test] fn effective_manifest_applies_size_to_scale() {
         let m = manifest(96, 2);
-        assert_eq!(effective_manifest(&m, SpriteSize::Small).scale, 1);
-        assert_eq!(effective_manifest(&m, SpriteSize::Large).scale, 3);
-        assert_eq!(collapsed_size(&effective_manifest(&m, SpriteSize::Small)), (96.0, 96.0));
+        assert_eq!(effective_manifest(&m, SpriteSize::Small, false).scale, 1);
+        assert_eq!(effective_manifest(&m, SpriteSize::Large, false).scale, 3);
+        assert_eq!(collapsed_size(&effective_manifest(&m, SpriteSize::Small, false)), (96.0, 96.0));
+    }
+
+    #[test] fn name_label_adds_its_height_below_the_sprite_only() {
+        let m = manifest(96, 2);
+        let e = effective_manifest(&m, SpriteSize::Normal, true);
+        assert_eq!(e.label_h, LABEL_H);
+        assert_eq!(collapsed_size(&e), (192.0, 192.0 + LABEL_H as f64), "same width, taller");
+        assert_eq!(window_size(&e).1, 192.0 + LABEL_H as f64 + BUBBLE_H);
+        assert_eq!(bubble_offset(&e), (14.0, BUBBLE_H), "label never shifts the sprite");
+        let hidden = effective_manifest(&m, SpriteSize::Normal, false);
+        assert_eq!(collapsed_size(&hidden), (192.0, 192.0));
     }
 
     #[test] fn collapsed_window_is_exactly_the_sprite() {

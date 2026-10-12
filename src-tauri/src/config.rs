@@ -28,6 +28,9 @@ pub struct Config {
     /// On-screen sprite size, applied on top of the pack's own `scale`.
     #[serde(default)]
     pub size: SpriteSize,
+    /// Show the session name under each sprite.
+    #[serde(default = "default_true")]
+    pub show_name: bool,
     /// Idle sprites take short strolls and come back home.
     #[serde(default = "default_true")]
     pub wander: bool,
@@ -41,7 +44,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, wander: true, wander_after_secs: 20, claude_path: None }
+        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, show_name: true, wander: true, wander_after_secs: 20, claude_path: None }
     }
 }
 
@@ -126,6 +129,7 @@ mod tests {
         let mut c = Config::load(&p);
         assert_eq!(c.size, SpriteSize::Normal);
         assert!(c.wander, "wander defaults to on for old configs");
+        assert!(c.show_name, "show_name defaults to on");
         assert_eq!(c.wander_after_secs, 20);
         c.size = SpriteSize::Small; c.wander = false; c.save(&p).unwrap();
         assert_eq!(Config::load(&p).size, SpriteSize::Small);

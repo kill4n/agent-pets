@@ -12,6 +12,7 @@ const mock = params.get("mock");
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const tip = document.getElementById("tip") as HTMLDivElement;
+const nameEl = document.getElementById("name") as HTMLDivElement;
 const ctx2d = canvas.getContext("2d");
 if (!ctx2d) throw new Error("2d context unavailable");
 const ctx: CanvasRenderingContext2D = ctx2d;
@@ -37,6 +38,8 @@ async function doLoadManifest(m: Manifest) {
   canvas.style.width = `${fw * m.scale}px`; canvas.style.height = `${fh * m.scale}px`;
   // the speech bubble sits right above the sprite; tell CSS how tall the sprite is
   document.documentElement.style.setProperty("--sprite-h", `${fh * m.scale}px`);
+  document.documentElement.style.setProperty("--label-h", `${m.labelH ?? 0}px`);
+  nameEl.classList.toggle("hidden", !(m.labelH > 0));
   sheets = new Map();
   for (const a of Object.values(m.animations)) {
     if (sheets.has(a.sheet)) continue;
@@ -50,6 +53,8 @@ async function doLoadManifest(m: Manifest) {
 
 function setView(v: AgentView) {
   view = v; viewAt = performance.now();
+  nameEl.textContent = v.name; nameEl.title = v.name;
+  nameEl.classList.toggle("fade", v.visible === "gone");
   animator?.play(v.visible);
   if (tipVisible) renderTip(tip, v, 0);
 }
@@ -71,29 +76,31 @@ requestAnimationFrame(frame);
 
 // drag vs click: a mousedown followed by movement starts an OS drag; a plain click toggles the tooltip
 let downAt: { x: number; y: number } | null = null;
-canvas.addEventListener("mousedown", (e) => { if (e.button === 0) downAt = { x: e.screenX, y: e.screenY }; });
-canvas.addEventListener("mousemove", (e) => {
-  if (!downAt) return;
-  if (Math.hypot(e.screenX - downAt.x, e.screenY - downAt.y) > 4) {
+for (const target of [canvas, nameEl] as HTMLElement[]) {
+  target.addEventListener("mousedown", (e) => { if (e.button === 0) downAt = { x: e.screenX, y: e.screenY }; });
+  target.addEventListener("mousemove", (e) => {
+    if (!downAt) return;
+    if (Math.hypot(e.screenX - downAt.x, e.screenY - downAt.y) > 4) {
+      downAt = null;
+      if (!mock) getCurrentWindow().startDragging().catch((err) => console.warn("startDragging failed", err));
+    }
+  });
+  // A plain click toggles the bubble, but only after the double-click window has passed, so a
+  // double click (focus the terminal) does not open and close the bubble on the way.
+  let clickTimer: number | undefined;
+  target.addEventListener("mouseup", () => {
+    if (downAt) {
+      window.clearTimeout(clickTimer);
+      clickTimer = window.setTimeout(() => void toggleBubble(), 250);
+    }
     downAt = null;
-    if (!mock) getCurrentWindow().startDragging().catch((err) => console.warn("startDragging failed", err));
-  }
-});
-// A plain click toggles the bubble, but only after the double-click window has passed, so a
-// double click (focus the terminal) does not open and close the bubble on the way.
-let clickTimer: number | undefined;
-canvas.addEventListener("mouseup", () => {
-  if (downAt) {
+  });
+  target.addEventListener("dblclick", () => {
     window.clearTimeout(clickTimer);
-    clickTimer = window.setTimeout(() => void toggleBubble(), 250);
-  }
-  downAt = null;
-});
-canvas.addEventListener("dblclick", () => {
-  window.clearTimeout(clickTimer);
-  if (mock) return;
-  invoke("focus_terminal", { key }).catch((err) => console.warn("focus_terminal failed", err));
-});
+    if (mock) return;
+    invoke("focus_terminal", { key }).catch((err) => console.warn("focus_terminal failed", err));
+  });
+}
 
 // The window is only as big as the sprite while the bubble is closed; ask Rust to grow it before
 // showing the bubble, and shrink it after hiding, so the bubble is never clipped.
