@@ -49,7 +49,7 @@ impl Wanderers {
 
     /// Called every second per window. `idle_for` is how long the agent has been in a strollable
     /// state (None when it is not), `pos` the current collapsed origin, `screen_w` the monitor width.
-    pub fn tick(&mut self, label: &str, idle_for: Option<Duration>, pos: Pos, screen_w: i32, sprite_w: i32, now: Instant) -> Decision {
+    pub fn tick(&mut self, label: &str, idle_for: Option<Duration>, min_idle: Duration, pos: Pos, screen_w: i32, sprite_w: i32, now: Instant) -> Decision {
         let w = self.map.entry(label.into()).or_insert_with(|| Wander::new(pos, now));
         if w.strolling { return Decision::Nothing; }
         match idle_for {
@@ -57,7 +57,7 @@ impl Wanderers {
                 if w.away { Decision::GoHome { from: pos, to: w.home } } else { w.home = pos; Decision::Nothing }
             }
             Some(d) => {
-                if d < MIN_IDLE || now < w.next_at { if !w.away { w.home = pos; } return Decision::Nothing; }
+                if d < min_idle || now < w.next_at { if !w.away { w.home = pos; } return Decision::Nothing; }
                 if w.away { return Decision::GoHome { from: pos, to: w.home }; }
                 w.home = pos;
                 let to = pick_destination(w.home, screen_w, sprite_w, Self::rand_i32(STROLL_MIN, STROLL_MAX, now), Self::rand_sign(now));
@@ -127,28 +127,36 @@ mod tests {
         assert!(hop.y < 50, "hop lifts the sprite");
     }
 
+    #[test] fn configured_threshold_is_respected() {
+        let now = Instant::now();
+        let mut ws = Wanderers::default();
+        let p = Pos { x: 300, y: 300 };
+        assert_eq!(ws.tick("w", Some(Duration::from_secs(5)), Duration::from_secs(60), p, 1440, 192, now), Decision::Nothing);
+        assert!(matches!(ws.tick("w", Some(Duration::from_secs(5)), Duration::from_secs(5), p, 1440, 192, now), Decision::Stroll { .. }));
+    }
+
     #[test] fn no_stroll_before_min_idle_or_while_busy() {
         let now = Instant::now();
         let mut ws = Wanderers::default();
-        assert_eq!(ws.tick("w", None, Pos { x: 10, y: 10 }, 1440, 192, now), Decision::Nothing);
-        assert_eq!(ws.tick("w", Some(Duration::from_secs(5)), Pos { x: 10, y: 10 }, 1440, 192, now), Decision::Nothing);
+        assert_eq!(ws.tick("w", None, MIN_IDLE, Pos { x: 10, y: 10 }, 1440, 192, now), Decision::Nothing);
+        assert_eq!(ws.tick("w", Some(Duration::from_secs(5)), MIN_IDLE, Pos { x: 10, y: 10 }, 1440, 192, now), Decision::Nothing);
     }
 
     #[test] fn strolls_when_idle_then_returns_home_and_rehomes_on_drag() {
         let now = Instant::now();
         let mut ws = Wanderers::default();
         let home = Pos { x: 500, y: 300 };
-        let d = ws.tick("w", Some(MIN_IDLE), home, 1440, 192, now);
+        let d = ws.tick("w", Some(MIN_IDLE), MIN_IDLE, home, 1440, 192, now);
         let Decision::Stroll { from, to } = d else { panic!("expected stroll, got {d:?}") };
         assert_eq!(from, home); assert_ne!(to, home); assert_eq!(to.y, home.y);
         ws.stroll_started("w");
         assert!(ws.is_strolling("w"));
-        assert_eq!(ws.tick("w", Some(MIN_IDLE), to, 1440, 192, now), Decision::Nothing, "no decisions mid-stroll");
+        assert_eq!(ws.tick("w", Some(MIN_IDLE), MIN_IDLE, to, 1440, 192, now), Decision::Nothing, "no decisions mid-stroll");
         ws.stroll_finished("w", true, now);
         assert!(ws.ignores_reports("w", now), "settle window after a stroll");
         assert!(!ws.ignores_reports("w", now + SETTLE + Duration::from_millis(1)));
         // state changed to busy while away: go home immediately
-        assert_eq!(ws.tick("w", None, to, 1440, 192, now + Duration::from_secs(1)), Decision::GoHome { from: to, to: home });
+        assert_eq!(ws.tick("w", None, MIN_IDLE, to, 1440, 192, now + Duration::from_secs(1)), Decision::GoHome { from: to, to: home });
         ws.stroll_started("w"); ws.stroll_finished("w", false, now);
         // user drags it while idle: new home, not away
         ws.rehome("w", Pos { x: 50, y: 60 }, now);
