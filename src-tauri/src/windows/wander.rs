@@ -10,10 +10,10 @@ pub const MIN_IDLE: Duration = Duration::from_secs(20);
 /// Stroll distance range (px) and duration.
 pub const STROLL_MIN: i32 = 40;
 pub const STROLL_MAX: i32 = 120;
-pub const STROLL_STEPS: u32 = 40;
-pub const STROLL_STEP: Duration = Duration::from_millis(40);
+pub const STROLL_STEPS: u32 = 72;
+pub const STROLL_STEP: Duration = Duration::from_millis(25);
 /// Hop height (px) during a stroll.
-pub const HOP: f64 = 6.0;
+pub const HOP: f64 = 4.0;
 /// Reports from the window (onMoved) are ignored this long after a stroll ends.
 pub const SETTLE: Duration = Duration::from_millis(600);
 
@@ -102,7 +102,10 @@ pub fn pick_destination(home: Pos, screen_w: i32, sprite_w: i32, dist: i32, sign
 pub fn step_position(from: Pos, to: Pos, i: u32, steps: u32) -> Pos {
     let t = (i as f64 / steps as f64).clamp(0.0, 1.0);
     let e = if t < 0.5 { 2.0 * t * t } else { 1.0 - (-2.0 * t + 2.0).powi(2) / 2.0 };
-    let hop = (std::f64::consts::PI * t * 3.0).sin().abs() * HOP; // three little hops per stroll
+    // three gentle hops per stroll: sin² has no cusps at the landings, and the hops fade in/out with the stroll
+    let phase = (std::f64::consts::PI * t * 3.0).sin();
+    let envelope = (std::f64::consts::PI * t).sin();
+    let hop = phase * phase * envelope * HOP;
     Pos { x: (from.x as f64 + (to.x - from.x) as f64 * e).round() as i32, y: (from.y as f64 + (to.y - from.y) as f64 * e - hop).round() as i32 }
 }
 
@@ -119,11 +122,11 @@ mod tests {
 
     #[test] fn steps_start_at_from_end_at_to_and_hop_in_between() {
         let (a, b) = (Pos { x: 0, y: 50 }, Pos { x: 100, y: 50 });
-        assert_eq!(step_position(a, b, 0, 40), a);
-        assert_eq!(step_position(a, b, 40, 40), b);
-        let mid = step_position(a, b, 20, 40);
+        assert_eq!(step_position(a, b, 0, 72), a);
+        assert_eq!(step_position(a, b, 72, 72), b);
+        let mid = step_position(a, b, 36, 72);
         assert_eq!(mid.x, 50);
-        let hop = step_position(a, b, 7, 40);
+        let hop = step_position(a, b, 12, 72);
         assert!(hop.y < 50, "hop lifts the sprite");
     }
 
