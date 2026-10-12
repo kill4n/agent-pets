@@ -26,7 +26,34 @@ pub struct HookEvent {
     /// Present when the hook fired inside a subagent (or on SubagentStart/Stop for that subagent).
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,
+    /// Short human summary of `tool_input` (the Bash command, a file path, ...) for permission prompts.
+    pub tool_summary: Option<String>,
 }
+
+/// Longest tool input the bubble will show. Anything longer is marked truncated and the bubble
+/// refuses to approve it: the user must see exactly what they allow.
+pub const TOOL_SUMMARY_MAX: usize = 2000;
+pub const TRUNCATED_MARK: &str = "\n[… truncado: decide en el terminal]";
+
+/// The text describing a tool call for the bubble: the Bash command verbatim (newlines kept), a
+/// path, or the compact JSON input. Ends with `TRUNCATED_MARK` when cut.
+pub fn summarize_tool_input(tool: Option<&str>, input: Option<&serde_json::Value>) -> Option<String> {
+    let v = input?;
+    let text = match tool {
+        Some("Bash") => v.get("command").and_then(|c| c.as_str()).map(str::to_string),
+        _ => v.get("file_path").or_else(|| v.get("path")).or_else(|| v.get("url")).or_else(|| v.get("pattern"))
+            .and_then(|c| c.as_str()).map(str::to_string),
+    }.unwrap_or_else(|| v.to_string());
+    let text = text.trim().to_string();
+    if text.chars().count() > TOOL_SUMMARY_MAX {
+        let mut out: String = text.chars().take(TOOL_SUMMARY_MAX).collect();
+        out.push_str(TRUNCATED_MARK);
+        return Some(out);
+    }
+    Some(text)
+}
+
+pub fn is_truncated_summary(s: &str) -> bool { s.ends_with(TRUNCATED_MARK) }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -78,6 +105,9 @@ pub fn parse_hook(host: &str, body: &serde_json::Value) -> Result<AgentEvent, Pa
         .ok_or(ParseError::MissingField("hook_event_name"))?.to_string();
     let str_field = |k: &str| body.get(k).and_then(|v| v.as_str()).map(str::to_string);
     let tool_name = str_field("tool_name");
+    let tool_summary = if matches!(event.as_str(), "PermissionRequest" | "PreToolUse" | "PostToolUse") {
+        summarize_tool_input(tool_name.as_deref(), body.get("tool_input"))
+    } else { None };
     let recipient = if tool_name.as_deref() == Some("SendMessage") {
         body.pointer("/tool_input/to").and_then(|v| v.as_str()).map(str::to_string)
     } else { None };
@@ -92,6 +122,7 @@ pub fn parse_hook(host: &str, body: &serde_json::Value) -> Result<AgentEvent, Pa
             recipient,
             agent_id: str_field("agent_id"),
             agent_type: str_field("agent_type"),
+            tool_summary,
         }),
         at: Instant::now(),
     })
@@ -143,6 +174,22 @@ mod tests {
             "notification_type":"permission_prompt","message":"x"});
         let EventKind::Hook(h) = parse_hook("mac", &body).unwrap().kind else { panic!() };
         assert_eq!(h.notification_type.as_deref(), Some("permission_prompt"));
+    }
+
+    #[test]
+    fn permission_request_summarizes_the_tool_input() {
+        let body = json!({"session_id":"abc","hook_event_name":"PermissionRequest","tool_name":"Bash",
+            "tool_input":{"command":"npm   test\n--watch","description":"x"}});
+        let EventKind::Hook(h) = parse_hook("mac", &body).unwrap().kind else { panic!() };
+        assert_eq!(h.tool_summary.as_deref(), Some("npm   test\n--watch"), "verbatim: newlines and spacing kept");
+        let body = json!({"session_id":"abc","hook_event_name":"PermissionRequest","tool_name":"Write","tool_input":{"file_path":"/tmp/a.rs","content":"..."}});
+        let EventKind::Hook(h) = parse_hook("mac", &body).unwrap().kind else { panic!() };
+        assert_eq!(h.tool_summary.as_deref(), Some("/tmp/a.rs"));
+        let long = "x".repeat(TOOL_SUMMARY_MAX + 5);
+        let cut = summarize_tool_input(Some("Bash"), Some(&json!({"command": long}))).unwrap();
+        assert!(is_truncated_summary(&cut));
+        assert!(!is_truncated_summary(&summarize_tool_input(Some("Bash"), Some(&json!({"command": "ls"}))).unwrap()));
+        assert_eq!(summarize_tool_input(Some("Bash"), None), None);
     }
 
     #[test]

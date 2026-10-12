@@ -13,7 +13,7 @@ pub fn label_for(key: &str) -> String { format!("sprite-{}", key.replace([':', '
 /// Minimum window width so the speech bubble (name, folder, state + reason/peer + time) fits.
 pub const MIN_WINDOW_W: f64 = 220.0;
 /// Room above the sprite for the speech bubble and its tail.
-pub const BUBBLE_H: f64 = 84.0;
+pub const BUBBLE_H: f64 = 112.0;
 
 /// Height of the session-name label under the sprite.
 pub const LABEL_H: u32 = 18;
@@ -187,7 +187,7 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
             let open = placement.lock().unwrap().is_open(&plabel);
             collapsed_origin(open, cur, m_main)
         });
-        let siblings = app.webview_windows().keys().filter(|k| is_child_label(k) && k.starts_with(&format!("sprite-sub-{}_", parent_key.replace([':', '/', '.'], "_")))).count();
+        let siblings = child_labels(app, parent_key).len();
         match parent_pos {
             Some(pp) => { let (pw, ph) = collapsed_size(m_main); child_position(pp, pw as i32, ph as i32, w as i32, h as i32, siblings, sw) }
             None => positions.lock().unwrap().cascade(siblings, sw, sh, w as i32, h as i32),
@@ -208,6 +208,34 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
     match built {
         Ok(_) => placement.lock().unwrap().created(&label, &v.name),
         Err(e) => log::error!("cannot create sprite window: {e}"),
+    }
+}
+
+/// Labels of the child windows of `parent_key`, in a stable order.
+fn child_labels(app: &AppHandle, parent_key: &str) -> Vec<String> {
+    let prefix = format!("sprite-sub-{}_", parent_key.replace([':', '/', '.'], "_"));
+    let mut v: Vec<String> = app.webview_windows().into_keys().filter(|k| k.starts_with(&prefix)).collect();
+    v.sort();
+    v
+}
+
+/// Move every child sprite back next to its (possibly moved) parent. Locks are taken only briefly.
+pub fn reposition_children(app: &AppHandle, parent_key: &str, m: &Manifest, placement: &Mutex<Placement>) {
+    let plabel = label_for(parent_key);
+    let Some(pw_win) = app.get_webview_window(&plabel) else { return };
+    let Some(cur) = current_pos(&pw_win) else { return };
+    let parent_open = placement.lock().unwrap().is_open(&plabel);
+    let parent = collapsed_origin(parent_open, cur, m);
+    let (pw, ph) = collapsed_size(m);
+    let child = child_manifest(m);
+    let (cw, chh) = collapsed_size(&child);
+    let screen_w = app.primary_monitor().ok().flatten().map(|mon| (mon.size().width as f64 / mon.scale_factor()) as i32).unwrap_or(1440);
+    for (i, label) in child_labels(app, parent_key).into_iter().enumerate() {
+        let Some(w) = app.get_webview_window(&label) else { continue };
+        let target = child_position(parent, pw as i32, ph as i32, cw as i32, chh as i32, i, screen_w);
+        let open = placement.lock().unwrap().is_open(&label);
+        let (pos, _) = rect_for(open, target, &child);
+        if let Err(e) = w.set_position(LogicalPosition::new(pos.x as f64, pos.y as f64)) { log::warn!("move child {label}: {e}"); }
     }
 }
 
@@ -264,7 +292,7 @@ mod tests {
 
     fn view(name: &str) -> AgentView {
         AgentView { key: "h:abcdef123456".into(), host: "h".into(), session_id: "abcdef123456".into(),
-            name: name.into(), cwd: None, pid: None, job_id: None, parent: None, visible: Visible::Working, waiting_for: None, peer: None, since_secs: 0 }
+            name: name.into(), cwd: None, pid: None, job_id: None, parent: None, permission: None, visible: Visible::Working, waiting_for: None, peer: None, since_secs: 0 }
     }
 
     #[test] fn rename_from_provisional_triggers_move_once() {
@@ -366,11 +394,11 @@ mod tests {
     }
 
     #[test] fn open_rect_keeps_the_sprite_in_place() {
-        let m = manifest(96, 2); // collapsed 192x192, open 220x276 -> offset (14, 84)
+        let m = manifest(96, 2); // collapsed 192x192, open 220x(192+BUBBLE_H) -> offset (14, BUBBLE_H)
         let c = Pos { x: 500, y: 400 };
         let (p, size) = rect_for(true, c, &m);
-        assert_eq!(size, (220.0, 276.0));
-        assert_eq!(p, Pos { x: 486, y: 316 });
+        assert_eq!(size, (220.0, 192.0 + BUBBLE_H));
+        assert_eq!(p, Pos { x: 486, y: 400 - BUBBLE_H as i32 });
         assert_eq!(collapsed_origin(true, p, &m), c, "round trip");
         assert_eq!(rect_for(false, c, &m), (c, (192.0, 192.0)));
         assert_eq!(collapsed_origin(false, c, &m), c);
@@ -393,6 +421,6 @@ mod tests {
         assert_eq!(window_size(&manifest(32, 4)).0, MIN_WINDOW_W);
         assert_eq!(window_size(&manifest(64, 4)).0, 256.0);
         assert_eq!(window_size(&manifest(32, 4)).1, 128.0 + BUBBLE_H);
-        assert_eq!(window_size(&manifest(64, 2)).1, 128.0 + 84.0);
+        assert_eq!(window_size(&manifest(64, 2)).1, 128.0 + BUBBLE_H);
     }
 }

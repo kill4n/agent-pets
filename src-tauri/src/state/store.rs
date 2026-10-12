@@ -17,6 +17,8 @@ pub struct AgentView {
     pub job_id: Option<String>,
     /// Key of the parent agent when this sprite is a subagent.
     pub parent: Option<String>,
+    /// Permission prompt held by Buddy: tool name and a one-line summary of its input.
+    pub permission: Option<(String, String)>,
     pub visible: Visible,
     pub waiting_for: Option<String>,
     pub peer: Option<String>,
@@ -27,13 +29,13 @@ pub struct AgentView {
 pub enum Change { Added(AgentView), Updated(AgentView), Removed(String) }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Fingerprint(Visible, String, Option<String>, Option<String>);
-fn fp(s: &AgentState) -> Fingerprint { Fingerprint(s.visible, s.name.clone(), s.waiting_for.clone(), s.peer.clone()) }
+struct Fingerprint(Visible, String, Option<String>, Option<String>, Option<(String, String)>);
+fn fp(s: &AgentState) -> Fingerprint { Fingerprint(s.visible, s.name.clone(), s.waiting_for.clone(), s.peer.clone(), s.permission.clone()) }
 
 fn make_view(s: &AgentState, now: Instant) -> AgentView {
     AgentView {
         key: s.id.key(), host: s.id.host.clone(), session_id: s.id.session_id.clone(),
-        name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(), parent: s.parent.clone(),
+        name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(), parent: s.parent.clone(), permission: s.permission.clone(),
         visible: s.visible, waiting_for: s.waiting_for.clone(), peer: s.peer.clone(),
         since_secs: now.saturating_duration_since(s.since).as_secs(),
     }
@@ -125,7 +127,7 @@ impl Store {
                     mark_missed(s, now);
                     if fp(s) != before {
                         let view = AgentView { key: key.clone(), host: s.id.host.clone(), session_id: s.id.session_id.clone(),
-                            name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(), parent: s.parent.clone(),
+                            name: s.name.clone(), cwd: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()), pid: s.pid, job_id: s.job_id.clone(), parent: s.parent.clone(), permission: s.permission.clone(),
                             visible: s.visible, waiting_for: s.waiting_for.clone(), peer: s.peer.clone(), since_secs: 0 };
                         changes.push(Change::Updated(view));
                     }
@@ -154,12 +156,12 @@ mod tests {
     fn hook_ev(sid: &str, event: &str, cwd: Option<&str>) -> AgentEvent {
         AgentEvent { host: "h".into(), session_id: sid.into(), at: Instant::now(),
             kind: EventKind::Hook(HookEvent { event: event.into(), cwd: cwd.map(Into::into),
-                tool_name: None, notification_type: None, recipient: None, agent_id: None, agent_type: None }) }
+                tool_name: None, notification_type: None, recipient: None, agent_id: None, agent_type: None, tool_summary: None }) }
     }
     fn sub_ev(sid: &str, event: &str, agent: &str, kind: Option<&str>) -> AgentEvent {
         AgentEvent { host: "h".into(), session_id: sid.into(), at: Instant::now(),
             kind: EventKind::Hook(HookEvent { event: event.into(), cwd: None, tool_name: None, notification_type: None,
-                recipient: None, agent_id: Some(agent.into()), agent_type: kind.map(Into::into) }) }
+                recipient: None, agent_id: Some(agent.into()), agent_type: kind.map(Into::into), tool_summary: None }) }
     }
 
     #[test] fn subagent_start_creates_a_child_sprite_next_to_its_parent() {

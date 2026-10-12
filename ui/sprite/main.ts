@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AgentView, Manifest } from "../shared/types";
 import { Animator } from "./animator";
-import { render as renderTip } from "./tooltip";
+import { render as renderTip, type Decision } from "./tooltip";
 
 const params = new URLSearchParams(location.search);
 const key = params.get("key") ?? "";
@@ -52,12 +52,23 @@ async function doLoadManifest(m: Manifest) {
   animator = new Animator(m, view?.visible ?? "idle");
 }
 
+// permission prompts open the bubble by themselves and close it again once answered
+let autoOpened = false;
+function decide(d: Decision) {
+  if (!view) return;
+  invoke("answer_permission", { key: view.key, decision: d }).catch((err) => console.warn("answer_permission failed", err));
+}
+function paintTip(v: AgentView, since: number) { renderTip(tip, v, since, decide); }
+
 function setView(v: AgentView) {
+  const hadPermission = !!view?.permission;
   view = v; viewAt = performance.now();
   nameEl.textContent = v.name; nameEl.title = v.name;
   nameEl.classList.toggle("fade", v.visible === "gone");
   animator?.play(v.visible);
-  if (tipVisible) renderTip(tip, v, 0);
+  if (tipVisible) paintTip(v, 0);
+  if (v.permission && !tipVisible && !mock) { autoOpened = true; void toggleBubble(); }
+  else if (hadPermission && !v.permission && autoOpened && tipVisible) { autoOpened = false; void toggleBubble(); }
 }
 
 let last = performance.now();
@@ -70,7 +81,7 @@ function frame(now: number) {
     ctx.clearRect(0, 0, fw, fh);
     if (img?.complete) ctx.drawImage(img, sx, sy, fw, fh, 0, 0, fw, fh);
   }
-  if (tipVisible && view) renderTip(tip, view, Math.floor((now - viewAt) / 1000));
+  if (tipVisible && view) paintTip(view, Math.floor((now - viewAt) / 1000));
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -113,7 +124,7 @@ async function toggleBubble() {
   try {
     if (next) {
       if (!mock) await invoke("set_bubble", { key, open: true });
-      tipVisible = true; tip.classList.add("show"); if (view) renderTip(tip, view, 0);
+      tipVisible = true; tip.classList.add("show"); if (view) paintTip(view, 0);
     } else {
       tipVisible = false; tip.classList.remove("show");
       if (!mock) await invoke("set_bubble", { key, open: false });
@@ -130,7 +141,7 @@ async function main() {
     const m: Manifest = await (await fetch("/assets-dev/pack.json")).json();
     for (const a of Object.values(m.animations)) a.loop ??= true; // Rust applies this serde default; raw pack.json omits it
     await loadManifest(m);
-    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null, job_id: null, parent: null,
+    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null, job_id: null, parent: null, permission: mock === "needs_input" ? ["Bash", "npm test"] : null,
       visible: mock as AgentView["visible"], waiting_for: mock === "needs_input" ? "permission prompt" : null,
       peer: mock === "waiting_peer" ? "buddy-2" : null, since_secs: 0 });
     return;
