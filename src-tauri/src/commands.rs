@@ -3,7 +3,8 @@ use crate::installer;
 use crate::packs::{list_pack_infos, PackInfo, list_packs, load_pack, Manifest};
 use crate::state::store::AgentView;
 use crate::state::agent_state::provisional_name;
-use crate::windows::manager::{label_for, save_position};
+use crate::windows::manager::{collapsed_origin, label_for, save_position};
+use crate::windows::positions::Pos;
 use crate::App;
 use base64::Engine;
 use std::path::{Component, Path};
@@ -45,8 +46,23 @@ pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
     let Some(view) = view else { return };
     // the provisional session_id[:8] name is throwaway: saving under it would never be found again
     if view.name == provisional_name(&view.session_id) { return; }
-    save_position(&mut app.positions.lock().unwrap(), &view.host, &view.name, x, y);
-    app.placement.lock().unwrap().mark_dragged(&label_for(&key));
+    // saved positions always describe the collapsed (sprite-only) rect
+    let label = label_for(&key);
+    let open = app.placement.lock().unwrap().is_open(&label);
+    let manifest = app.manifest.lock().unwrap().clone();
+    let origin = match manifest {
+        Some(m) => collapsed_origin(open, Pos { x, y }, &m),
+        None => Pos { x, y },
+    };
+    save_position(&mut app.positions.lock().unwrap(), &view.host, &view.name, origin.x, origin.y);
+    app.placement.lock().unwrap().mark_dragged(&label);
+}
+
+/// Open or close the speech bubble: the window grows/shrinks around the sprite.
+#[tauri::command(async)]
+pub fn set_bubble(handle: AppHandle, app: State<Arc<App>>, key: String, open: bool) -> Result<(), String> {
+    let manifest = app.manifest.lock().unwrap().clone().ok_or("no pack loaded")?;
+    crate::windows::manager::set_bubble(&handle, &label_for(&key), &manifest, open, &app.placement)
 }
 
 #[tauri::command]
