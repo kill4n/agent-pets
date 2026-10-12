@@ -3,12 +3,28 @@ use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SpriteSize { Small, #[default] Normal, Large }
+
+impl SpriteSize {
+    pub fn factor(self) -> f64 { match self { SpriteSize::Small => 0.5, SpriteSize::Normal => 1.0, SpriteSize::Large => 1.5 } }
+    /// Effective integer scale for a pack: `scale × factor`, rounded, never below 1 (keeps pixel art crisp).
+    pub fn apply(self, pack_scale: u32) -> u32 { ((pack_scale as f64 * self.factor()).round() as u32).max(1) }
+    pub fn parse(s: &str) -> Option<SpriteSize> {
+        match s { "small" => Some(SpriteSize::Small), "normal" => Some(SpriteSize::Normal), "large" => Some(SpriteSize::Large), _ => None }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     pub port: u16,
     pub token: String,
     pub pack: String,
     pub bind_all: bool,
+    /// On-screen sprite size, applied on top of the pack's own `scale`.
+    #[serde(default)]
+    pub size: SpriteSize,
     /// Absolute path to the `claude` binary; overrides PATH lookup (GUI apps get a minimal PATH).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
@@ -16,7 +32,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, claude_path: None }
+        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, claude_path: None }
     }
 }
 
@@ -85,6 +101,23 @@ mod tests {
         let p = d.path().join("config.json");
         std::fs::write(&p, "nope").unwrap();
         assert_eq!(Config::load(&p).port, 7433);
+    }
+    #[test] fn sprite_size_scales_pack_scale_with_a_floor_of_one() {
+        assert_eq!(SpriteSize::Small.apply(2), 1);
+        assert_eq!(SpriteSize::Normal.apply(2), 2);
+        assert_eq!(SpriteSize::Large.apply(2), 3);
+        assert_eq!(SpriteSize::Small.apply(1), 1, "never below 1");
+        assert_eq!(SpriteSize::parse("large"), Some(SpriteSize::Large));
+        assert_eq!(SpriteSize::parse("huge"), None);
+    }
+    #[test] fn size_defaults_to_normal_for_old_configs() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("config.json");
+        std::fs::write(&p, r#"{"port":7433,"token":"0123456789abcdef0123456789abcdef","pack":"default","bind_all":false}"#).unwrap();
+        let mut c = Config::load(&p);
+        assert_eq!(c.size, SpriteSize::Normal);
+        c.size = SpriteSize::Small; c.save(&p).unwrap();
+        assert_eq!(Config::load(&p).size, SpriteSize::Small);
     }
     #[test] fn claude_path_is_optional_and_roundtrips() {
         let d = tempfile::tempdir().unwrap();

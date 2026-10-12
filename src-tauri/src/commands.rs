@@ -1,9 +1,9 @@
-use crate::config::{config_path, Config};
+use crate::config::{config_path, Config, SpriteSize};
 use crate::installer;
 use crate::packs::{list_pack_infos, PackInfo, list_packs, load_pack, Manifest};
 use crate::state::store::AgentView;
 use crate::state::agent_state::provisional_name;
-use crate::windows::manager::{collapsed_origin, label_for, save_position};
+use crate::windows::manager::{collapsed_origin, effective_manifest, label_for, resize_all, save_position};
 use crate::windows::positions::Pos;
 use crate::App;
 use base64::Engine;
@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, State};
 pub struct Status {
     pub hooks_installed: bool, pub poll_error: Option<String>, pub server_error: Option<String>,
     pub pack_warning: Option<String>, pub hook_url: String, pub token: String, pub pack: String,
+    pub size: SpriteSize,
 }
 
 #[tauri::command]
@@ -58,6 +59,31 @@ pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
     app.placement.lock().unwrap().mark_dragged(&label);
 }
 
+/// Push a new effective manifest to every sprite window and resize them around their sprites.
+fn apply_manifest(handle: &AppHandle, app: &App, old: Option<&Manifest>, new: &Manifest) {
+    if let Some(old) = old { resize_all(handle, old, new, &app.placement); }
+    for label in handle.webview_windows().into_keys() {
+        if label.starts_with("sprite-") { let _ = handle.emit_to(EventTarget::webview_window(label), "manifest", new); }
+    }
+}
+
+/// Change the on-screen sprite size (small / normal / large) and resize every window in place.
+#[tauri::command(async)]
+pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result<(), String> {
+    let size = SpriteSize::parse(&size).ok_or_else(|| format!("unknown size: {size}"))?;
+    let pack = {
+        let mut cfg = app.config.lock().unwrap();
+        cfg.size = size;
+        if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
+        cfg.pack.clone()
+    };
+    let loaded = load_pack(&app.packs_root.join(&pack)).map_err(|e| e.to_string())?;
+    let m = effective_manifest(&loaded, size);
+    let old = app.manifest.lock().unwrap().replace(m.clone());
+    apply_manifest(&handle, &app, old.as_ref(), &m);
+    Ok(())
+}
+
 /// Open or close the speech bubble: the window grows/shrinks around the sprite.
 #[tauri::command(async)]
 pub fn set_bubble(handle: AppHandle, app: State<Arc<App>>, key: String, open: bool) -> Result<(), String> {
@@ -75,7 +101,7 @@ pub fn get_status(app: State<Arc<App>>) -> Status {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
     Status { hooks_installed: installer::is_installed(&settings, &cfg.hook_url()),
              poll_error: app.poll_error.borrow().clone(), server_error: app.server_error.borrow().clone(),
-             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack }
+             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size }
 }
 
 #[tauri::command]
@@ -98,17 +124,17 @@ pub fn set_pack(handle: AppHandle, app: State<Arc<App>>, name: String) -> Result
     if !is_single_normal(&name) || !list_packs(&app.packs_root).contains(&name) {
         return Err(format!("unknown pack: {name}"));
     }
-    let m = load_pack(&app.packs_root.join(&name)).map_err(|e| e.to_string())?;
-    {
+    let loaded = load_pack(&app.packs_root.join(&name)).map_err(|e| e.to_string())?;
+    let size = {
         let mut cfg = app.config.lock().unwrap();
         cfg.pack = name;
         if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
-    }
-    *app.manifest.lock().unwrap() = Some(m.clone());
+        cfg.size
+    };
+    let m = effective_manifest(&loaded, size);
+    let old = app.manifest.lock().unwrap().replace(m.clone());
     app.pack_warning.send_replace(None);
-    for label in handle.webview_windows().into_keys() {
-        if label.starts_with("sprite-") { let _ = handle.emit_to(EventTarget::webview_window(label), "manifest", &m); }
-    }
+    apply_manifest(&handle, &app, old.as_ref(), &m);
     Ok(())
 }
 
