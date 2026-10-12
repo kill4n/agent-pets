@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 fn default_true() -> bool { true }
+fn default_wander_after() -> u32 { 20 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -30,6 +31,9 @@ pub struct Config {
     /// Idle sprites take short strolls and come back home.
     #[serde(default = "default_true")]
     pub wander: bool,
+    /// Seconds a sprite must be idle before it starts strolling.
+    #[serde(default = "default_wander_after")]
+    pub wander_after_secs: u32,
     /// Absolute path to the `claude` binary; overrides PATH lookup (GUI apps get a minimal PATH).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
@@ -37,7 +41,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, wander: true, claude_path: None }
+        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, wander: true, wander_after_secs: 20, claude_path: None }
     }
 }
 
@@ -122,6 +126,7 @@ mod tests {
         let mut c = Config::load(&p);
         assert_eq!(c.size, SpriteSize::Normal);
         assert!(c.wander, "wander defaults to on for old configs");
+        assert_eq!(c.wander_after_secs, 20);
         c.size = SpriteSize::Small; c.wander = false; c.save(&p).unwrap();
         assert_eq!(Config::load(&p).size, SpriteSize::Small);
         assert!(!Config::load(&p).wander);
