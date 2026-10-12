@@ -32,24 +32,57 @@ pub fn find_bundle<F: FnMut(u32) -> Option<(u32, String)>>(mut pid: u32, mut loo
     None
 }
 
+/// Claude Code's session registry directory (`$CLAUDE_CONFIG_DIR` or `~/.claude`, then `sessions/`).
+pub fn sessions_dir() -> PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from)
+        .or_else(|| directories::BaseDirs::new().map(|b| b.home_dir().join(".claude")))
+        .unwrap_or_else(|| PathBuf::from(".claude"))
+        .join("sessions")
+}
+
+/// A daemon-hosted (background) session is shown by a separate interactive `claude` client that the
+/// registry marks with `parkedJobId == <job id>`. That client is the process living inside the terminal.
+pub fn parked_client_pid(dir: &std::path::Path, job_id: &str) -> Option<u32> {
+    let rd = std::fs::read_dir(dir).ok()?;
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|x| x.to_str()) != Some("json") { continue; }
+        let Ok(text) = std::fs::read_to_string(&p) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        if v.get("parkedJobId").and_then(|j| j.as_str()) == Some(job_id) {
+            if let Some(pid) = v.get("pid").and_then(|x| x.as_u64()) { return Some(pid as u32); }
+        }
+    }
+    None
+}
+
+/// Resolve the terminal app for a session: walk from its own pid, else from its parked client's pid.
+pub fn terminal_bundle(pid: Option<u32>, job_id: Option<&str>, sessions: &std::path::Path) -> Option<PathBuf> {
+    if let Some(b) = pid.and_then(|p| find_bundle(p, ps_lookup)) { return Some(b); }
+    let client = job_id.and_then(|j| parked_client_pid(sessions, j))?;
+    find_bundle(client, ps_lookup)
+}
+
 fn ps_lookup(pid: u32) -> Option<(u32, String)> {
     let out = Command::new("ps").args(["-o", "ppid=,comm=", "-p", &pid.to_string()]).output().ok()?;
     if !out.status.success() { return None; }
     parse_ps_line(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// Activate the terminal application hosting `pid`.
-pub fn focus_pid(pid: u32) -> Result<(), String> {
+/// Activate the terminal application showing this session.
+pub fn focus_session(pid: Option<u32>, job_id: Option<&str>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let bundle = find_bundle(pid, ps_lookup).ok_or("no se encontró la app del terminal")?;
+        let bundle = terminal_bundle(pid, job_id, &sessions_dir()).ok_or("no se encontró la app del terminal")?;
         let st = Command::new("open").arg(&bundle).status().map_err(|e| e.to_string())?;
         return if st.success() { Ok(()) } else { Err(format!("open {} falló", bundle.display())) };
     }
     #[cfg(target_os = "linux")]
     {
         // best effort: find the first ancestor that owns an X window and activate it
-        let mut p = pid;
+        let start = pid.or_else(|| job_id.and_then(|j| parked_client_pid(&sessions_dir(), j)))
+            .ok_or("esta sesión no tiene un terminal asociado")?;
+        let mut p = start;
         for _ in 0..32 {
             let win = Command::new("xdotool").args(["search", "--pid", &p.to_string(), "--limit", "1"]).output()
                 .map_err(|e| format!("xdotool no disponible: {e}"))?;
@@ -65,7 +98,7 @@ pub fn focus_pid(pid: u32) -> Result<(), String> {
         return Err("no se encontró la ventana del terminal".into());
     }
     #[allow(unreachable_code)]
-    { let _ = pid; Err("enfocar el terminal no está soportado en este sistema".into()) }
+    { let _ = (pid, job_id); Err("enfocar el terminal no está soportado en este sistema".into()) }
 }
 
 #[cfg(test)]
@@ -98,6 +131,17 @@ mod tests {
             _ => None,
         };
         assert_eq!(find_bundle(64361, tree), Some(PathBuf::from("/Applications/iTerm.app")));
+    }
+
+    #[test] fn parked_client_is_found_by_job_id() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("64361.json"), r#"{"pid":64361,"kind":"interactive","parkedJobId":"7b09e06b"}"#).unwrap();
+        std::fs::write(d.path().join("69075.json"), r#"{"pid":69075,"kind":"bg","jobId":"7b09e06b"}"#).unwrap();
+        std::fs::write(d.path().join("junk.json"), "not json").unwrap();
+        std::fs::write(d.path().join("x.key"), r#"{"pid":1,"parkedJobId":"7b09e06b"}"#).unwrap();
+        assert_eq!(parked_client_pid(d.path(), "7b09e06b"), Some(64361));
+        assert_eq!(parked_client_pid(d.path(), "nope"), None);
+        assert_eq!(parked_client_pid(&d.path().join("missing"), "7b09e06b"), None);
     }
 
     #[test] fn gives_up_at_init_or_unknown_pid() {
