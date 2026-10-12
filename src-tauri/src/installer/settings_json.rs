@@ -13,9 +13,16 @@ impl std::error::Error for InstallError {}
 impl From<std::io::Error> for InstallError { fn from(e: std::io::Error) -> Self { InstallError::Io(e) } }
 impl From<serde_json::Error> for InstallError { fn from(e: serde_json::Error) -> Self { InstallError::Json(e) } }
 
-pub fn hook_entry(url: &str, token: &str) -> Value {
+/// Seconds Claude Code waits for our server per event. PermissionRequest is held open so the user
+/// can answer from the bubble; everything else must never slow Claude Code down.
+pub const PERMISSION_HOOK_TIMEOUT: u32 = 620;
+pub fn hook_timeout(event: &str) -> u32 { if event == "PermissionRequest" { PERMISSION_HOOK_TIMEOUT } else { 2 } }
+
+pub fn hook_entry(url: &str, token: &str) -> Value { hook_entry_for("Stop", url, token) }
+
+pub fn hook_entry_for(event: &str, url: &str, token: &str) -> Value {
     json!({ "hooks": [{ "type": "http", "url": url,
-        "headers": { "Authorization": format!("Bearer {token}") }, "timeout": 2 }] })
+        "headers": { "Authorization": format!("Bearer {token}") }, "timeout": hook_timeout(event) }] })
 }
 
 fn group_has_url(group: &Value, url: &str) -> bool {
@@ -60,7 +67,7 @@ pub fn merge_hooks(settings: &mut Value, url: &str, token: &str) -> Result<(), I
     let hooks = hooks.as_object_mut().expect("checked by check_shape");
     for ev in HOOK_EVENTS {
         let groups = hooks.entry(ev).or_insert_with(|| json!([]));
-        groups.as_array_mut().expect("checked by check_shape").push(hook_entry(url, token));
+        groups.as_array_mut().expect("checked by check_shape").push(hook_entry_for(ev, url, token));
     }
     Ok(())
 }
@@ -134,6 +141,8 @@ mod tests {
         assert_eq!(s["hooks"]["Stop"][0]["hooks"][0]["type"], "http");
         assert_eq!(s["hooks"]["Stop"][0]["hooks"][0]["headers"]["Authorization"], "Bearer tok");
         assert_eq!(s["hooks"]["Stop"][0]["hooks"][0]["timeout"], 2);
+        assert_eq!(s["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], PERMISSION_HOOK_TIMEOUT, "held for the bubble");
+        assert_eq!(s["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"], 2);
     }
 
     #[test] fn merge_is_idempotent() {

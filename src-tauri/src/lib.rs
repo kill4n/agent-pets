@@ -20,12 +20,18 @@ use tokio::sync::{mpsc, watch};
 use windows::manager::Placement;
 use windows::positions::Positions;
 
+/// Host id for sessions observed on this machine.
+pub const LOCAL_HOST: &str = "local";
+
 pub struct App {
     pub config: Mutex<Config>,
     pub store: Mutex<Store>,
     pub positions: Mutex<Positions>,
     pub placement: Mutex<Placement>,
     pub wanderers: Mutex<windows::wander::Wanderers>,
+    /// permission prompts held for the bubble, and how long to hold them
+    pub parked: Arc<collector::hooks_server::Parked>,
+    pub permission_wait: Arc<Mutex<Duration>>,
     /// None when no valid pack could be loaded: the app keeps running, sprites just don't render.
     pub manifest: Mutex<Option<Manifest>>,
     pub packs_root: PathBuf,
@@ -104,7 +110,10 @@ pub fn run() {
             let manifest = manifest.map(|m| windows::manager::effective_manifest(&m, cfg.size, cfg.show_name));
             cfg.pack = pack;
             let _ = cfg.save(&config_path());
-            let host = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or_else(|_| "local".into());
+            // Sessions collected on this machine use a fixed host id: the OS hostname changes with the
+            // network (Mac.lan vs name.local) and positions are keyed by host, so sprites would get lost.
+            // Remote hosts (future multi-PC) carry their own id in the events they send.
+            let host = LOCAL_HOST.to_string();
 
             let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
             let (err_tx, err_rx) = watch::channel(None);
@@ -114,6 +123,8 @@ pub fn run() {
                 positions: Mutex::new(Positions::load(positions_path())),
                 placement: Mutex::new(Placement::default()),
                 wanderers: Mutex::new(windows::wander::Wanderers::default()),
+                parked: Arc::new(collector::hooks_server::Parked::default()),
+                permission_wait: Arc::new(Mutex::new(Duration::from_secs(cfg.permission_wait_secs as u64))),
                 manifest: Mutex::new(manifest), packs_root: root, host: host.clone(), poll_error: err_rx,
                 server_error: watch::channel(None).0, pack_warning: watch::channel(pack_warn).0,
             });
@@ -124,8 +135,9 @@ pub fn run() {
 
             let addr = cfg.bind_addr();
             let (h2, t2, tx2, st2) = (host.clone(), cfg.token.clone(), tx.clone(), state.clone());
+            let (parked, wait) = (state.parked.clone(), state.permission_wait.clone());
             tauri::async_runtime::spawn(async move {
-                match collector::hooks_server::serve(addr, h2, t2, tx2).await {
+                match collector::hooks_server::serve(addr, h2, t2, tx2, parked, wait).await {
                     Ok(a) => log::info!("hooks server on {a}"),
                     Err(e) => {
                         log::error!("hooks server failed to bind {addr}: {e}");
@@ -163,7 +175,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_manifest, commands::get_pack_url, commands::report_position, commands::list_agents,
             commands::get_status, commands::install_hooks, commands::uninstall_hooks, commands::list_pack_names,
-            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal, commands::set_wander, commands::set_show_name
+            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal, commands::set_wander, commands::set_show_name, commands::answer_permission, commands::set_permission_wait
         ])
         .build(tauri::generate_context!())
         .expect("error while building buddy")
@@ -214,7 +226,7 @@ fn wander_tick(handle: &tauri::AppHandle, st: &Arc<App>) {
             Decision::GoHome { from, to } => (from, to, false),
         };
         st.wanderers.lock().unwrap().stroll_started(&label);
-        let (st2, label2, m2) = (st.clone(), label.clone(), m.clone());
+        let (st2, label2, m2, handle2) = (st.clone(), label.clone(), m.clone(), handle.clone());
         tauri::async_runtime::spawn(async move {
             let open_now = st2.placement.lock().unwrap().is_open(&label2);
             let (dx, dy) = if open_now { windows::manager::bubble_offset(&m2) } else { (0.0, 0.0) };
@@ -224,6 +236,11 @@ fn wander_tick(handle: &tauri::AppHandle, st: &Arc<App>) {
                 tokio::time::sleep(STROLL_STEP).await;
             }
             st2.wanderers.lock().unwrap().stroll_finished(&label2, away, Instant::now());
+            // labels are sanitized keys: find the real key through the store, then bring the children along
+            let views = st2.store.lock().unwrap().views(Instant::now());
+            if let Some(v) = views.iter().find(|v| windows::manager::label_for(&v.key) == label2) {
+                windows::manager::reposition_children(&handle2, &v.key, &m2, &st2.placement);
+            }
         });
     }
 }

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 fn default_true() -> bool { true }
 fn default_wander_after() -> u32 { 20 }
+fn default_permission_wait() -> u32 { 60 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -28,6 +29,9 @@ pub struct Config {
     /// On-screen sprite size, applied on top of the pack's own `scale`.
     #[serde(default)]
     pub size: SpriteSize,
+    /// Seconds a permission prompt is held for the bubble before the terminal asks (0 = never hold).
+    #[serde(default = "default_permission_wait")]
+    pub permission_wait_secs: u32,
     /// Show the session name under each sprite.
     #[serde(default = "default_true")]
     pub show_name: bool,
@@ -44,7 +48,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, show_name: true, wander: true, wander_after_secs: 20, claude_path: None }
+        Self { port: 7433, token: generate_token(), pack: "default".into(), bind_all: false, size: SpriteSize::Normal, permission_wait_secs: 60, show_name: true, wander: true, wander_after_secs: 20, claude_path: None }
     }
 }
 
@@ -130,6 +134,7 @@ mod tests {
         assert_eq!(c.size, SpriteSize::Normal);
         assert!(c.wander, "wander defaults to on for old configs");
         assert!(c.show_name, "show_name defaults to on");
+        assert_eq!(c.permission_wait_secs, 60);
         assert_eq!(c.wander_after_secs, 20);
         c.size = SpriteSize::Small; c.wander = false; c.save(&p).unwrap();
         assert_eq!(Config::load(&p).size, SpriteSize::Small);
