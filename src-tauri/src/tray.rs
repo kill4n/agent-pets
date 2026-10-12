@@ -100,7 +100,10 @@ fn build_menu(app: &AppHandle, st: &App) -> tauri::Result<Menu<tauri::Wry>> {
             secs == status.wander_after_secs, None::<&str>)?)?;
     }
 
-    let autostart_item = CheckMenuItem::with_id(app, "autostart:toggle", "Arrancar al iniciar sesión", true, autostart, None::<&str>)?;
+    let dev_build = cfg!(debug_assertions);
+    let autostart_item = CheckMenuItem::with_id(app, "autostart:toggle",
+        if dev_build { "Arrancar al iniciar sesión (solo en la app instalada)" } else { "Arrancar al iniciar sesión" },
+        !dev_build, autostart && !dev_build, None::<&str>)?;
     let advanced = MenuItem::with_id(app, "advanced", "Avanzado…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
 
@@ -143,6 +146,7 @@ fn on_menu(app: &AppHandle, id: &str) {
             let (enabled, secs) = { let c = st.config.lock().unwrap(); (c.wander, c.wander_after_secs) };
             commands::do_set_wander(&st, !enabled, secs)
         }
+        "autostart:toggle" if cfg!(debug_assertions) => Err("la build de desarrollo no puede arrancar sola: instala Buddy.app".into()),
         "autostart:toggle" => {
             let al = app.autolaunch();
             let r = if al.is_enabled().unwrap_or(false) { al.disable() } else { al.enable() };
