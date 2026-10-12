@@ -3,7 +3,7 @@ use crate::installer;
 use crate::packs::{list_pack_infos, PackInfo, list_packs, load_pack, Manifest};
 use crate::state::store::AgentView;
 use crate::state::agent_state::provisional_name;
-use crate::windows::manager::{child_manifest, collapsed_origin, effective_manifest, label_for, label_for_view, manifest_for_label, resize_all, save_position};
+use crate::windows::manager::{child_manifest, collapsed_origin, effective_manifest, label_for, label_for_view, manifest_for_label, reposition_children, resize_all, save_position};
 use crate::windows::positions::Pos;
 use crate::App;
 use base64::Engine;
@@ -20,6 +20,7 @@ pub struct Status {
     pub wander: bool,
     pub wander_after_secs: u32,
     pub show_name: bool,
+    pub permission_wait_secs: u32,
 }
 
 #[tauri::command]
@@ -49,7 +50,7 @@ pub fn get_pack_url(app: State<Arc<App>>, sheet: String) -> Result<String, Strin
 }
 
 #[tauri::command(async)]
-pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
+pub fn report_position(handle: AppHandle, app: State<Arc<App>>, key: String, x: i32, y: i32) {
     let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key);
     let Some(view) = view else { return };
     // subagent sprites hug their parent and never persist a position
@@ -70,6 +71,7 @@ pub fn report_position(app: State<Arc<App>>, key: String, x: i32, y: i32) {
     save_position(&mut app.positions.lock().unwrap(), &view.host, &view.name, origin.x, origin.y);
     app.placement.lock().unwrap().mark_dragged(&label);
     app.wanderers.lock().unwrap().rehome(&label, origin, now);
+    if let Some(m) = app.manifest.lock().unwrap().clone() { reposition_children(&handle, &view.key, &m, &app.placement); }
 }
 
 /// Push a new effective manifest to every sprite window and resize them around their sprites.
@@ -132,6 +134,27 @@ pub fn do_set_wander(app: &App, enabled: bool, after_secs: u32) -> Result<(), St
     Ok(())
 }
 
+/// Answer a permission prompt held for this agent: "allow" | "deny" | "terminal".
+#[tauri::command]
+pub fn answer_permission(app: State<Arc<App>>, key: String, decision: String) -> Result<(), String> {
+    let d = crate::collector::hooks_server::Decision::parse(&decision).ok_or_else(|| format!("decisión desconocida: {decision}"))?;
+    if !app.parked.answer(&key, d) { return Err("ese permiso ya no está pendiente".into()); }
+    Ok(())
+}
+
+/// How long permission prompts are held for the bubble (0 disables holding).
+#[tauri::command]
+pub fn set_permission_wait(handle: AppHandle, app: State<Arc<App>>, secs: u32) -> Result<(), String> {
+    do_set_permission_wait(&app, secs)?; crate::tray::refresh_menu(&handle, &app); Ok(())
+}
+
+pub fn do_set_permission_wait(app: &App, secs: u32) -> Result<(), String> {
+    if secs > 600 { return Err("máximo 600 segundos".into()); }
+    { let mut cfg = app.config.lock().unwrap(); cfg.permission_wait_secs = secs; if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); } }
+    *app.permission_wait.lock().unwrap() = std::time::Duration::from_secs(secs as u64);
+    Ok(())
+}
+
 /// Bring the terminal hosting this agent's session to the front (double-click on the sprite).
 #[tauri::command(async)]
 pub fn focus_terminal(app: State<Arc<App>>, key: String) -> Result<(), String> { do_focus_terminal(&app, &key) }
@@ -169,7 +192,7 @@ pub fn status_of(app: &App) -> Status {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
     Status { hooks_installed: installer::is_installed(&settings, &cfg.hook_url()),
              poll_error: app.poll_error.borrow().clone(), server_error: app.server_error.borrow().clone(),
-             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander, wander_after_secs: cfg.wander_after_secs, show_name: cfg.show_name }
+             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander, wander_after_secs: cfg.wander_after_secs, show_name: cfg.show_name, permission_wait_secs: cfg.permission_wait_secs }
 }
 
 #[tauri::command]
