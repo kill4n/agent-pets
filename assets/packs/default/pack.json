@@ -1,8 +1,8 @@
 {
   "name": "Slime",
   "frameSize": [
-    80,
-    80
+    96,
+    96
   ],
   "scale": 2,
   "animations": {
