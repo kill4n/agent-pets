@@ -25,6 +25,10 @@ pub struct Manifest {
     #[serde(default = "default_scale")]
     pub scale: u32,
     pub animations: BTreeMap<String, Animation>,
+    /// Runtime-only: height (px) of the session-name label drawn under the sprite, 0 when hidden.
+    /// Never read from pack.json; set by the app when it applies the user's settings.
+    #[serde(default, skip_deserializing)]
+    pub label_h: u32,
 }
 
 #[derive(Debug)]

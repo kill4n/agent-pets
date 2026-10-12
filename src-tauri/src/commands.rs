@@ -19,6 +19,7 @@ pub struct Status {
     pub size: SpriteSize,
     pub wander: bool,
     pub wander_after_secs: u32,
+    pub show_name: bool,
 }
 
 #[tauri::command]
@@ -81,14 +82,24 @@ pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result
 }
 
 pub fn do_set_size(handle: &AppHandle, app: &App, size: SpriteSize) -> Result<(), String> {
-    let pack = {
-        let mut cfg = app.config.lock().unwrap();
-        cfg.size = size;
-        if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
-        cfg.pack.clone()
-    };
+    { let mut cfg = app.config.lock().unwrap(); cfg.size = size; if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); } }
+    reapply_pack(handle, app)
+}
+
+/// Show or hide the session-name label under every sprite.
+#[tauri::command(async)]
+pub fn set_show_name(handle: AppHandle, app: State<Arc<App>>, enabled: bool) -> Result<(), String> { do_set_show_name(&handle, &app, enabled) }
+
+pub fn do_set_show_name(handle: &AppHandle, app: &App, enabled: bool) -> Result<(), String> {
+    { let mut cfg = app.config.lock().unwrap(); cfg.show_name = enabled; if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); } }
+    reapply_pack(handle, app)
+}
+
+/// Reload the configured pack with the current settings and resize/refresh every sprite window.
+fn reapply_pack(handle: &AppHandle, app: &App) -> Result<(), String> {
+    let (pack, size, show_name) = { let c = app.config.lock().unwrap(); (c.pack.clone(), c.size, c.show_name) };
     let loaded = load_pack(&app.packs_root.join(&pack)).map_err(|e| e.to_string())?;
-    let m = effective_manifest(&loaded, size);
+    let m = effective_manifest(&loaded, size, show_name);
     let old = app.manifest.lock().unwrap().replace(m.clone());
     apply_manifest(handle, app, old.as_ref(), &m);
     crate::tray::refresh_menu(handle, app);
@@ -144,7 +155,7 @@ pub fn status_of(app: &App) -> Status {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or(serde_json::json!({}));
     Status { hooks_installed: installer::is_installed(&settings, &cfg.hook_url()),
              poll_error: app.poll_error.borrow().clone(), server_error: app.server_error.borrow().clone(),
-             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander, wander_after_secs: cfg.wander_after_secs }
+             pack_warning: app.pack_warning.borrow().clone(), hook_url: cfg.hook_url(), token: cfg.token.clone(), pack: cfg.pack, size: cfg.size, wander: cfg.wander, wander_after_secs: cfg.wander_after_secs, show_name: cfg.show_name }
 }
 
 #[tauri::command]
@@ -175,13 +186,13 @@ pub fn do_set_pack(handle: &AppHandle, app: &App, name: String) -> Result<(), St
         return Err(format!("unknown pack: {name}"));
     }
     let loaded = load_pack(&app.packs_root.join(&name)).map_err(|e| e.to_string())?;
-    let size = {
+    let (size, show_name) = {
         let mut cfg = app.config.lock().unwrap();
         cfg.pack = name;
         if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); }
-        cfg.size
+        (cfg.size, cfg.show_name)
     };
-    let m = effective_manifest(&loaded, size);
+    let m = effective_manifest(&loaded, size, show_name);
     let old = app.manifest.lock().unwrap().replace(m.clone());
     app.pack_warning.send_replace(None);
     apply_manifest(handle, app, old.as_ref(), &m);
