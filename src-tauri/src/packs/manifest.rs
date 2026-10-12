@@ -29,7 +29,13 @@ pub struct Manifest {
     /// Never read from pack.json; set by the app when it applies the user's settings.
     #[serde(default, skip_deserializing)]
     pub label_h: u32,
+    /// Runtime-only: extra fractional zoom applied on top of `scale` (subagent sprites use 0.5 when
+    /// the integer scale cannot be halved). 1.0 for normal sprites.
+    #[serde(default = "default_zoom", skip_deserializing)]
+    pub zoom: f64,
 }
+
+fn default_zoom() -> f64 { 1.0 }
 
 #[derive(Debug)]
 pub enum PackError {

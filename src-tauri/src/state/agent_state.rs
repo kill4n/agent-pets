@@ -20,6 +20,8 @@ pub struct AgentState {
     pub cwd: Option<PathBuf>,
     pub pid: Option<u32>,
     pub job_id: Option<String>,
+    /// Key of the parent agent when this is a subagent sprite.
+    pub parent: Option<String>,
     pub visible: Visible,
     pub waiting_for: Option<String>,
     pub peer: Option<String>,
@@ -31,13 +33,16 @@ pub struct AgentState {
     pub missed_polls: u8,
 }
 
+/// Session id used for a subagent's own AgentId: `<parent session>/<agent id>`.
+pub fn child_session_id(parent_session: &str, agent_id: &str) -> String { format!("{parent_session}/{agent_id}") }
+
 /// Name shown until the poller reports the real one: the first 8 chars of the session id.
 pub fn provisional_name(session_id: &str) -> String { session_id.chars().take(8).collect() }
 
 impl AgentState {
     pub fn new(id: AgentId, now: Instant) -> Self {
         let name = provisional_name(&id.session_id);
-        Self { id, name, cwd: None, pid: None, job_id: None, visible: Visible::Idle, waiting_for: None, peer: None,
+        Self { id, name, cwd: None, pid: None, job_id: None, parent: None, visible: Visible::Idle, waiting_for: None, peer: None,
             subagents: 0, sent_message: false, since: now, last_hook_at: None, last_seen: now, missed_polls: 0 }
     }
 
