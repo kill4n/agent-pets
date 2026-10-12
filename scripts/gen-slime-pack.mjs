@@ -1,9 +1,10 @@
-// Generates assets/packs/default/{sheet.png,pack.json}: a glossy, translucent jelly slime
-// (Rimuru-style). 80x80 frames, 8 columns x 6 rows (one row per state). Body tint per state.
+// Generates assets/packs/default/{sheet.png,sheet.json}: an anime cel-shaded slime (Rimuru-style).
+// 96x96 frames, 8 columns x 6 rows (one row per state). Flat colour zones with hard edges,
+// a big hard-edged white highlight, thin dark outline, no face. Body tint per state.
 import { PNG } from "pngjs";
 import { writeFileSync, mkdirSync } from "node:fs";
 
-const F = 80, COLS = 8, ROWS = 6;
+const F = 96, COLS = 8, ROWS = 6;
 const png = new PNG({ width: F * COLS, height: F * ROWS });
 
 // ---------- primitives ----------
@@ -21,159 +22,174 @@ const px = (x, y, c) => {
 const rect = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, c); };
 const hline = (x, y, w, c) => rect(x, y, w, 1, c);
 const circle = (cx, cy, r, c) => { for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r) px(cx + x, cy + y, c); };
+const ellipse = (cx, cy, rx, ry, c) => { for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) if ((x * x) / (rx * rx) + (y * y) / (ry * ry) <= 1) px(cx + x, cy + y, c); };
 const withAlpha = (c, a) => [c[0], c[1], c[2], a];
-const shade = (c, k) => [Math.max(0, Math.min(255, c[0] * k)), Math.max(0, Math.min(255, c[1] * k)), Math.max(0, Math.min(255, c[2] * k)), c[3] ?? 255];
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, 255];
+const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255];
 
-// Jelly blob shape: a superellipse-ish drop, wider than tall, flattened at the bottom.
-// Returns true for (dx,dy) relative to the blob centre with half-width rx and half-height ry.
+// Slime silhouette: near-sphere with a gently flattened base. (dx,dy) relative to centre.
 function inBlob(dx, dy, rx, ry, lean = 0) {
-  const x = dx - lean * (dy / ry); // lean tilts the top sideways
-  const ny = dy / ry, nx = x / rx;
-  // top half rounder (circle), bottom half squarer (superellipse n=3) and flattened
+  const x = dx - lean * (dy / ry);
+  const nx = x / rx, ny = dy / ry;
   if (ny <= 0) return nx * nx + ny * ny <= 1;
-  const n = 2.8;
-  return Math.pow(Math.abs(nx), n) + Math.pow(Math.abs(ny) * 1.15, n) <= 1;
+  const n = 2.4; // squarer bottom = sits on the floor
+  return Math.pow(Math.abs(nx), n) + Math.pow(Math.abs(ny) * 1.08, n) <= 1;
 }
 
-// ---------- palette ----------
-const INK = [36, 58, 92], WHITE = [255, 255, 255], RED = [232, 64, 64], YELLOW = [255, 236, 140], SCREEN = [140, 215, 255];
-const RIMURU = [159, 224, 255];
+// ---------- palette (anime cel zones) ----------
+// base / shadow band / deep / inner halo, for the pure Rimuru look (idle)
+const RIMURU = { base: hex("#A6E3FA"), shadow: hex("#6FC2EA"), deep: hex("#4FA3D6"), halo: hex("#D6F4FF"), line: hex("#2B4C77") };
+const WHITE = [255, 255, 255, 255], RED = [232, 64, 64, 255], YELLOW = [255, 236, 140, 255], SCREEN = [140, 215, 255, 255], INK = hex("#2B4C77");
+// per-state tints applied to every zone (0 = pure Rimuru)
 const TINT = {
-  working: [110, 170, 255], idle: RIMURU, needs_input: [255, 200, 110],
-  delegating: [150, 235, 200], waiting_peer: [200, 170, 255], gone: [170, 180, 195],
+  working: { c: hex("#6A9BFF"), k: 0.5 }, idle: { c: RIMURU.base, k: 0 }, needs_input: { c: hex("#FFC95C"), k: 0.85 },
+  delegating: { c: hex("#5FE0A8"), k: 0.45 }, waiting_peer: { c: hex("#B48CFF"), k: 0.5 }, gone: { c: hex("#9AA3AE"), k: 0.7 },
+};
+const zones = (state) => {
+  const { c, k } = TINT[state];
+  const t = (z) => mix(z, c, k);
+  return { base: t(RIMURU.base), shadow: t(RIMURU.shadow), deep: t(RIMURU.deep), halo: mix(t(RIMURU.halo), WHITE, 0.3), line: mix(RIMURU.line, c, k * 0.4) };
 };
 const order = ["working", "idle", "needs_input", "delegating", "waiting_peer", "gone"];
 
 // ---------- slime ----------
-// centre of the blob base at (40, 58). sx/sy = horizontal/vertical stretch factors (squash & stretch).
-function slime(o, tint, { sx = 1, sy = 1, lean = 0, alpha = 230, dy = 0, cx: cxo = 0 } = {}) {
-  const rx = Math.round(24 * sx), ry = Math.round(20 * sy);
-  const cx = o.x + 40 + cxo, cy = o.y + 58 - ry + dy; // keep the base on the floor when stretching
-  const deep = shade(tint, 0.72), light = mix(tint, WHITE, 0.35), rim = mix(tint, WHITE, 0.55);
-  // ground shadow
-  for (let y = -3; y <= 3; y++) for (let x = -rx - 2; x <= rx + 2; x++) if ((x * x) / ((rx + 2) * (rx + 2)) + (y * y) / 9 <= 1) px(cx + x, o.y + 60 + y, [0, 0, 0, 40]);
-  // outline (1px, soft)
-  for (let y = -ry - 1; y <= ry + 1; y++) for (let x = -rx - 1; x <= rx + 1; x++) {
-    if (inBlob(x, y, rx, ry, lean)) continue;
-    if (inBlob(x + 1, y, rx, ry, lean) || inBlob(x - 1, y, rx, ry, lean) || inBlob(x, y + 1, rx, ry, lean) || inBlob(x, y - 1, rx, ry, lean)) px(cx + x, cy + y, withAlpha(INK, Math.round(alpha * 0.9)));
-  }
-  // body: vertical gradient deep -> light, translucent
+// base of the blob sits at y = 72 in frame space, centred at x = 48.
+function slime(o, state, { sx = 1, sy = 1, lean = 0, alpha = 255, dy = 0 } = {}) {
+  const Z = zones(state);
+  const rx = Math.round(28 * sx), ry = Math.round(26 * sy);
+  const cx = o.x + 48, cy = o.y + 72 - ry + dy;
+  const A = (c) => withAlpha(c, alpha);
+
+  // ground shadow (flat, hard-edged like anime)
+  ellipse(cx, o.y + 74, rx + 3, 4, [0, 0, 0, Math.round(alpha * 0.18)]);
+
+  // body zones: painted per pixel with hard thresholds
   for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) {
     if (!inBlob(x, y, rx, ry, lean)) continue;
-    const t = (y + ry) / (2 * ry); // 0 top, 1 bottom
-    const c = mix(light, deep, Math.pow(t, 1.4));
-    // inner rim light near the left/top edge
-    const edge = inBlob(x - 2, y - 2, rx, ry, lean) ? 0 : 1;
-    px(cx + x, cy + y, withAlpha(edge ? rim : c, alpha));
+    const nx = x / rx, ny = y / ry;
+    // distance from an off-centre "light" point (top-left) decides the zone
+    const lx = nx + 0.35, ly = ny + 0.45;
+    const d = Math.sqrt(lx * lx + ly * ly);
+    let c = Z.base;
+    if (d > 1.32) c = Z.deep;
+    else if (d > 1.02) c = Z.shadow;
+    // inner halo: a light ring just inside the outline, suggests translucency (only on the lit side)
+    const edge = !inBlob(x * 1.09, y * 1.09, rx, ry, lean);
+    if (edge && ny < 0.25 && d < 1.02) c = Z.halo;
+    px(cx + x, cy + y, A(c));
   }
-  // deep core glow (slightly darker, translucent) low-centre
-  for (let y = 0; y <= ry; y++) for (let x = -rx; x <= rx; x++)
-    if (inBlob(x, y, rx, ry, lean) && (x * x) / (rx * rx * 0.45) + ((y - ry * 0.45) ** 2) / (ry * ry * 0.3) <= 1) px(cx + x, cy + y, withAlpha(deep, 70));
-  // big glossy highlight (top-left) + two small sparkles
-  const hx = cx - Math.round(rx * 0.42) + Math.round(lean * 0.6), hy = cy - Math.round(ry * 0.45);
-  for (let y = -6; y <= 6; y++) for (let x = -9; x <= 9; x++) if ((x * x) / 81 + (y * y) / 36 <= 1) px(hx + x, hy + y, withAlpha(WHITE, 210));
-  circle(cx + Math.round(rx * 0.45), cy - Math.round(ry * 0.25), 2, withAlpha(WHITE, 230));
-  px(cx + Math.round(rx * 0.55), cy + Math.round(ry * 0.2), withAlpha(WHITE, 200));
+  // shadow-band "bounce" light: thin lighter line along the bottom edge (anime rim)
+  for (let x = -rx; x <= rx; x++) {
+    const nx = x / rx;
+    if (Math.abs(nx) > 0.85) continue;
+    const yEdge = (() => { for (let y = ry; y >= 0; y--) if (inBlob(x, y, rx, ry, lean)) return y; return ry; })();
+    px(cx + x, cy + yEdge - 1, A(mix(Z.shadow, WHITE, 0.35)));
+  }
+  // outline 2px (1px solid + 1px inner soft)
+  for (let y = -ry - 2; y <= ry + 2; y++) for (let x = -rx - 2; x <= rx + 2; x++) {
+    if (inBlob(x, y, rx, ry, lean)) continue;
+    const n1 = inBlob(x + 1, y, rx, ry, lean) || inBlob(x - 1, y, rx, ry, lean) || inBlob(x, y + 1, rx, ry, lean) || inBlob(x, y - 1, rx, ry, lean);
+    if (n1) px(cx + x, cy + y, A(Z.line));
+  }
+  // main highlight: big hard-edged white oval top-left with a "bite" (anime style)
+  const hx = cx - Math.round(rx * 0.40) + Math.round(lean * 0.6), hy = cy - Math.round(ry * 0.50);
+  const hrx = Math.round(rx * 0.34), hry = Math.round(ry * 0.22);
+  for (let y = -hry; y <= hry; y++) for (let x = -hrx; x <= hrx; x++) {
+    if ((x * x) / (hrx * hrx) + (y * y) / (hry * hry) > 1) continue;
+    // bite: subtract a circle at the lower-right of the highlight
+    const bx = x - hrx * 0.55, by = y - hry * 0.9;
+    if ((bx * bx) / (hrx * hrx * 0.35) + (by * by) / (hry * hry * 1.2) <= 1) continue;
+    px(hx + x, hy + y, A(WHITE));
+  }
+  // secondary small highlight (right) and a tiny one below the main
+  ellipse(cx + Math.round(rx * 0.48), cy - Math.round(ry * 0.18), 3, 2, A(WHITE));
+  circle(hx + Math.round(hrx * 0.9), hy + Math.round(hry * 1.9), 1, A(WHITE));
   return { cx, cy, rx, ry };
-}
-function face(b, { eyes = "dot", look = 0, mouth = "smile", alpha = 255 } = {}) {
-  const ink = withAlpha(INK, alpha);
-  const ey = b.cy + 2, lx = b.cx - 8 + look, rx = b.cx + 8 + look;
-  if (eyes === "none") return;
-  if (eyes === "closed") { hline(lx - 3, ey, 6, ink); hline(rx - 3, ey, 6, ink); px(lx - 3, ey - 1, ink); px(rx + 2, ey - 1, ink); }
-  else if (eyes === "wide") { circle(lx, ey, 4, ink); circle(rx, ey, 4, ink); circle(lx, ey, 3, withAlpha(WHITE, alpha)); circle(rx, ey, 3, withAlpha(WHITE, alpha)); circle(lx + 1, ey, 1, ink); circle(rx + 1, ey, 1, ink); }
-  else { circle(lx, ey, 2, ink); circle(rx, ey, 2, ink); px(lx - 1, ey - 1, withAlpha(WHITE, alpha)); px(rx - 1, ey - 1, withAlpha(WHITE, alpha)); }
-  const my = b.cy + 9;
-  if (mouth === "smile") { px(b.cx - 3, my - 1, ink); px(b.cx - 2, my, ink); px(b.cx - 1, my, ink); px(b.cx, my, ink); px(b.cx + 1, my, ink); px(b.cx + 2, my, ink); px(b.cx + 3, my - 1, ink); }
-  else if (mouth === "o") { circle(b.cx, my, 3, ink); circle(b.cx, my, 2, withAlpha(shade(RED, 0.85), alpha)); }
-  else if (mouth === "flat") hline(b.cx - 3, my, 7, ink);
-  else if (mouth === "wavy") { px(b.cx - 3, my, ink); px(b.cx - 2, my - 1, ink); px(b.cx - 1, my, ink); px(b.cx, my + 1, ink); px(b.cx + 1, my, ink); px(b.cx + 2, my - 1, ink); px(b.cx + 3, my, ink); }
 }
 
 // ---------- props ----------
 function laptop(o, keyGlow) {
-  const x = o.x + 26, y = o.y + 66;
-  rect(x, y, 28, 5, INK); rect(x + 1, y + 1, 26, 3, [70, 80, 100]);
-  rect(x + 3, y - 12, 22, 13, INK); rect(x + 4, y - 11, 20, 11, SCREEN);
-  for (let i = 0; i < 3; i++) hline(x + 6, y - 9 + i * 3, 7 + ((i + keyGlow) % 3) * 4, shade(SCREEN, 0.6));
+  const x = o.x + 30, y = o.y + 78;
+  rect(x, y, 36, 6, INK); rect(x + 1, y + 1, 34, 4, hex("#5B6B85"));
+  rect(x + 4, y - 15, 28, 16, INK); rect(x + 5, y - 14, 26, 14, SCREEN);
+  for (let i = 0; i < 3; i++) hline(x + 8, y - 11 + i * 4, 8 + ((i + keyGlow) % 3) * 5, mix(SCREEN, INK, 0.45));
 }
 function exclaim(o, dy, alpha = 255) {
-  const x = o.x + 38, y = o.y + 4 + dy;
-  rect(x - 1, y - 1, 6, 15, withAlpha(INK, alpha)); rect(x, y, 4, 12, withAlpha(RED, alpha));
-  rect(x - 1, y + 15, 6, 5, withAlpha(INK, alpha)); rect(x, y + 16, 4, 3, withAlpha(RED, alpha));
+  const x = o.x + 45, y = o.y + 6 + dy;
+  rect(x - 1, y - 1, 8, 18, withAlpha(INK, alpha)); rect(x, y, 6, 15, withAlpha(RED, alpha));
+  rect(x - 1, y + 18, 8, 6, withAlpha(INK, alpha)); rect(x, y + 19, 6, 4, withAlpha(RED, alpha));
 }
-function zee(x, y, alpha, big = false) {
-  const a = withAlpha(INK, alpha), w = big ? 7 : 5;
-  hline(x, y, w, a); for (let i = 1; i < w - 1; i++) px(x + w - 1 - i, y + i, a); hline(x, y + w - 1, w, a);
+function sweat(x, y, alpha = 255) {
+  const c = withAlpha(hex("#7FD4FF"), alpha), l = withAlpha(INK, alpha);
+  circle(x, y + 3, 3, l); circle(x, y + 3, 2, c); px(x, y, l); px(x, y + 1, c); px(x - 1, y + 2, c); px(x + 1, y + 2, c); px(x - 1, y + 3, WHITE);
+}
+function zee(x, y, alpha, w) {
+  const a = withAlpha(INK, alpha);
+  rect(x, y, w, 2, a); for (let i = 1; i < w - 1; i++) { px(x + w - 1 - i, y + i, a); px(x + w - 2 - i, y + i, a); } rect(x, y + w - 1, w, 2, a);
 }
 function clock(x, y, frame) {
-  circle(x, y, 9, INK); circle(x, y, 8, WHITE);
-  px(x, y - 5, INK); px(x, y + 5, INK); px(x - 5, y, INK); px(x + 5, y, INK);
+  circle(x, y, 11, INK); circle(x, y, 10, WHITE);
+  for (const [dx, dy] of [[0, -7], [0, 7], [-7, 0], [7, 0]]) circle(x + dx, y + dy, 1, INK);
   const a = (frame / 8) * Math.PI * 2;
-  for (let t = 1; t <= 6; t++) px(x + Math.round(Math.sin(a) * t), y - Math.round(Math.cos(a) * t), INK);
-  px(x - 2, y, INK); px(x - 3, y, INK);
+  for (let t = 1; t <= 7; t++) rect(x + Math.round(Math.sin(a) * t), y - Math.round(Math.cos(a) * t), 1, 1, INK);
+  hline(x - 4, y, 4, INK);
 }
-function dots(x, y, n) { for (let i = 0; i < n; i++) circle(x + i * 4, y, 1, INK); }
-function sparkle(x, y, c = YELLOW) { px(x, y, c); px(x - 1, y, c); px(x + 1, y, c); px(x, y - 1, c); px(x, y + 1, c); px(x - 2, y, withAlpha(c, 120)); px(x + 2, y, withAlpha(c, 120)); px(x, y - 2, withAlpha(c, 120)); px(x, y + 2, withAlpha(c, 120)); }
-function miniSlime(o, x, y, tint, bob) {
-  const rx = 8, ry = 7, cx = x, cy = y - bob;
-  const deep = shade(tint, 0.72), light = mix(tint, WHITE, 0.35);
+function dots(x, y, n) { for (let i = 0; i < n; i++) circle(x + i * 6, y, 2, INK); }
+function sparkle(x, y, c = YELLOW) { rect(x - 1, y - 4, 3, 9, c); rect(x - 4, y - 1, 9, 3, c); px(x - 3, y - 3, c); px(x + 3, y - 3, c); px(x - 3, y + 3, c); px(x + 3, y + 3, c); }
+function miniSlime(o, x, y, state, bob) {
+  const Z = zones(state), rx = 10, ry = 9, cx = x, cy = y - bob;
+  for (let yy = -ry; yy <= ry; yy++) for (let xx = -rx; xx <= rx; xx++) {
+    if (!inBlob(xx, yy, rx, ry)) continue;
+    const nx = xx / rx, ny = yy / ry, lx = nx + 0.35, ly = ny + 0.45, d = Math.sqrt(lx * lx + ly * ly);
+    px(cx + xx, cy + yy, d > 1.1 ? Z.shadow : Z.base);
+  }
   for (let yy = -ry - 1; yy <= ry + 1; yy++) for (let xx = -rx - 1; xx <= rx + 1; xx++) {
     if (inBlob(xx, yy, rx, ry)) continue;
-    if (inBlob(xx + 1, yy, rx, ry) || inBlob(xx - 1, yy, rx, ry) || inBlob(xx, yy + 1, rx, ry) || inBlob(xx, yy - 1, rx, ry)) px(cx + xx, cy + yy, withAlpha(INK, 200));
+    if (inBlob(xx + 1, yy, rx, ry) || inBlob(xx - 1, yy, rx, ry) || inBlob(xx, yy + 1, rx, ry) || inBlob(xx, yy - 1, rx, ry)) px(cx + xx, cy + yy, Z.line);
   }
-  for (let yy = -ry; yy <= ry; yy++) for (let xx = -rx; xx <= rx; xx++) if (inBlob(xx, yy, rx, ry)) px(cx + xx, cy + yy, withAlpha(mix(light, deep, (yy + ry) / (2 * ry)), 230));
-  circle(cx - 3, cy - 3, 2, withAlpha(WHITE, 210));
-  px(cx - 3, cy + 1, INK); px(cx + 3, cy + 1, INK);
+  ellipse(cx - 4, cy - 4, 3, 2, WHITE);
 }
 
 // ---------- animations ----------
 const anims = {
   working(o, f) {
-    const wob = [0, 0.03, 0.05, 0.03, 0, -0.03, -0.05, -0.03][f];
-    const b = slime(o, TINT.working, { sx: 1 + wob, sy: 1 - wob, lean: 0 });
-    face(b, { eyes: "dot", look: 0, mouth: "smile" });
+    const wob = [0, 0.02, 0.04, 0.02, 0, -0.02, -0.04, -0.02][f];
+    slime(o, "working", { sx: 1 + wob, sy: 1 - wob });
     laptop(o, f);
-    if (f % 4 === 0) sparkle(o.x + 62, o.y + 44); if (f % 4 === 2) sparkle(o.x + 16, o.y + 40);
+    if (f % 4 === 0) sparkle(o.x + 78, o.y + 50); if (f % 4 === 2) sparkle(o.x + 18, o.y + 44);
   },
   idle(o, f) {
     const t = Math.sin((f / 6) * Math.PI * 2);
-    const b = slime(o, TINT.idle, { sx: 1 + t * 0.04, sy: 1 - t * 0.05 });
-    face(b, { eyes: "none" });
+    slime(o, "idle", { sx: 1 + t * 0.03, sy: 1 - t * 0.04 });
     const z = f / 6;
-    zee(o.x + 58, o.y + 18 - Math.round(z * 10), 255 - Math.round(z * 160), true);
-    if (f >= 2) zee(o.x + 64, o.y + 26 - (f - 2) * 2, 200);
+    zee(o.x + 70, o.y + 20 - Math.round(z * 12), 255 - Math.round(z * 160), 9);
+    if (f >= 2) zee(o.x + 78, o.y + 32 - (f - 2) * 3, 210, 6);
   },
   needs_input(o, f) {
-    const stretch = [0, 0.18, 0.3, 0.3, 0.18, 0][f % 6];
-    const b = slime(o, TINT.needs_input, { sx: 1 - stretch * 0.4, sy: 1 + stretch });
-    face(b, { eyes: "wide", mouth: "o" });
-    exclaim(o, -Math.round(stretch * 20) + (f % 2));
+    const stretch = [0, 0.16, 0.28, 0.28, 0.16, 0][f % 6];
+    slime(o, "needs_input", { sx: 1 - stretch * 0.4, sy: 1 + stretch });
+    exclaim(o, -Math.round(stretch * 24) + (f % 2));
+    sweat(o.x + 76, o.y + 30 + (f % 3), 255);
   },
   delegating(o, f) {
     const spread = [0, 2, 5, 8, 10, 10, 8, 4][f];
-    const b = slime(o, TINT.delegating, { sx: 1 - spread * 0.015, sy: 1 + spread * 0.01, lean: f < 4 ? -2 : 2 });
-    face(b, { eyes: "dot", look: f < 4 ? -2 : 2, mouth: "smile" });
+    slime(o, "delegating", { sx: 1 - spread * 0.012, sy: 1 + spread * 0.008, lean: f < 4 ? -3 : 3 });
     const bob = [0, 1, 3, 2, 0, 1, 3, 2][f];
-    miniSlime(o, o.x + 12 - Math.round(spread * 0.4), o.y + 66, TINT.delegating, bob);
-    miniSlime(o, o.x + 68 + Math.round(spread * 0.4), o.y + 66, TINT.delegating, 3 - bob);
+    miniSlime(o, o.x + 14 - Math.round(spread * 0.4), o.y + 80, "delegating", bob);
+    miniSlime(o, o.x + 82 + Math.round(spread * 0.4), o.y + 80, "delegating", 3 - bob);
   },
   waiting_peer(o, f) {
-    const lean = [-4, -4, -2, 0, 4, 4, 2, 0][f];
-    const b = slime(o, TINT.waiting_peer, { lean, sx: 1, sy: 1 });
-    face(b, { eyes: "dot", look: lean < 0 ? -3 : lean > 0 ? 3 : 0, mouth: "wavy" });
-    clock(o.x + 66, o.y + 14, f);
-    dots(o.x + 8, o.y + 14, (f % 3) + 1);
+    const lean = [-5, -5, -2, 0, 5, 5, 2, 0][f];
+    slime(o, "waiting_peer", { lean });
+    clock(o.x + 80, o.y + 16, f);
+    dots(o.x + 8, o.y + 16, (f % 3) + 1);
   },
   gone(o, f) {
-    const t = f / 7;
-    const alpha = Math.round(230 * (1 - t * 0.9));
-    const b = slime(o, TINT.gone, { sx: 1 + t * 0.5, sy: 1 - t * 0.85, alpha });
-    if (f < 3) face(b, { eyes: "closed", mouth: "flat", alpha });
+    const t = f / 7, alpha = Math.round(255 * (1 - t * 0.9));
+    slime(o, "gone", { sx: 1 + t * 0.5, sy: 1 - t * 0.85, alpha });
     for (let i = 0; i < 3; i++) {
       const pa = Math.round(220 * (1 - t));
-      circle(o.x + 22 + i * 18, o.y + 40 - f * 4 - i * 3, 1, withAlpha(mix(TINT.gone, WHITE, 0.5), pa));
+      circle(o.x + 26 + i * 22, o.y + 48 - f * 5 - i * 3, 2, withAlpha(hex("#D6F4FF"), pa));
     }
   },
 };
