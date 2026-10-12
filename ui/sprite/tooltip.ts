@@ -17,7 +17,9 @@ export function fmtSince(s: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-export function render(el: HTMLElement, v: AgentView, sinceOffset: number) {
+export type Decision = "allow" | "deny" | "terminal";
+
+export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDecide?: (d: Decision) => void) {
   const detail = v.visible === "needs_input" && v.waiting_for ? ` (${v.waiting_for})`
                : v.visible === "waiting_peer" && v.peer ? ` → ${v.peer}` : "";
   const b = document.createElement("b");
@@ -29,4 +31,27 @@ export function render(el: HTMLElement, v: AgentView, sinceOffset: number) {
     document.createElement("br"),
     document.createTextNode(`${LABEL[v.visible] ?? v.visible}${detail} · ${fmtSince(v.since_secs + sinceOffset)}`),
   );
+  if (v.permission && onDecide) {
+    const [tool, summary] = v.permission;
+    const ask = document.createElement("div");
+    ask.className = "ask";
+    const what = document.createElement("code");
+    what.textContent = summary ? `${tool}: ${summary}` : tool;
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const truncated = summary.endsWith("[… truncado: decide en el terminal]");
+    const choices = truncated
+      ? ([["Denegar", "deny", "bad"], ["En el terminal", "terminal", ""]] as const)
+      : ([["Permitir", "allow", "ok"], ["Denegar", "deny", "bad"], ["En el terminal", "terminal", ""]] as const);
+    for (const [label, d, cls] of choices) {
+      const b = document.createElement("button");
+      b.textContent = label; b.className = cls; b.type = "button";
+      b.addEventListener("mousedown", (e) => e.stopPropagation());
+      b.addEventListener("mouseup", (e) => e.stopPropagation());
+      b.addEventListener("click", (e) => { e.stopPropagation(); onDecide(d); });
+      actions.append(b);
+    }
+    ask.append(what, actions);
+    el.append(ask);
+  }
 }

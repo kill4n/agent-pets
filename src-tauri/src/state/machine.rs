@@ -16,6 +16,8 @@ fn effective(s: &AgentState, base: Visible) -> Visible {
 }
 
 pub fn apply_hook(s: &mut AgentState, h: &HookEvent, now: Instant) {
+    // any hook other than the request itself means the prompt was answered (or abandoned)
+    if h.event != "PermissionRequest" { s.permission = None; }
     s.last_hook_at = Some(now);
     s.last_seen = now;
     s.missed_polls = 0;
@@ -37,7 +39,10 @@ pub fn apply_hook(s: &mut AgentState, h: &HookEvent, now: Instant) {
             Visible::Working
         }
         "Stop" => if s.sent_message { Visible::WaitingPeer } else { Visible::Idle },
-        "PermissionRequest" => Visible::NeedsInput,
+        "PermissionRequest" => {
+            s.permission = Some((h.tool_name.clone().unwrap_or_else(|| "herramienta".into()), h.tool_summary.clone().unwrap_or_default()));
+            Visible::NeedsInput
+        }
         "Notification" => {
             if h.notification_type.as_deref().is_some_and(|t| NEEDS_INPUT_NOTIFICATIONS.contains(&t)) {
                 Visible::NeedsInput
@@ -104,7 +109,7 @@ mod tests {
     use std::time::Duration;
 
     fn hook(event: &str) -> HookEvent {
-        HookEvent { event: event.into(), cwd: None, tool_name: None, notification_type: None, recipient: None, agent_id: None, agent_type: None }
+        HookEvent { event: event.into(), cwd: None, tool_name: None, notification_type: None, recipient: None, agent_id: None, agent_type: None, tool_summary: None }
     }
     fn fresh() -> (AgentState, Instant) {
         let now = Instant::now();
@@ -140,10 +145,13 @@ mod tests {
 
     #[test] fn permission_request_needs_input() {
         let (mut s, now) = fresh();
-        apply_hook(&mut s, &hook("PermissionRequest"), now);
+        let mut h = hook("PermissionRequest"); h.tool_name = Some("Bash".into()); h.tool_summary = Some("rm -rf build".into());
+        apply_hook(&mut s, &h, now);
         assert_eq!(s.visible, Visible::NeedsInput);
+        assert_eq!(s.permission, Some(("Bash".into(), "rm -rf build".into())));
         apply_hook(&mut s, &hook("PostToolUse"), now);
         assert_eq!(s.visible, Visible::Working);
+        assert_eq!(s.permission, None, "answered");
     }
 
     #[test] fn notification_types_need_input() {

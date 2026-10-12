@@ -16,6 +16,11 @@ use tauri::{
 use tauri_plugin_autostart::ManagerExt;
 
 pub const WANDER_AFTER_CHOICES: [u32; 6] = [10, 20, 30, 60, 120, 300];
+pub const PERMISSION_WAIT_CHOICES: [u32; 5] = [0, 15, 30, 60, 120];
+
+pub fn permission_wait_label(secs: u32) -> String {
+    if secs == 0 { "Nunca (siempre en el terminal)".into() } else { wander_after_label(secs) }
+}
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?])?;
@@ -102,6 +107,14 @@ fn build_menu(app: &AppHandle, st: &App) -> tauri::Result<Menu<tauri::Wry>> {
     }
 
     let dev_build = cfg!(debug_assertions);
+    let perm_menu = Submenu::with_id(app, "permission_wait", "Responder permisos desde el globo", true)?;
+    let mut pchoices: Vec<u32> = PERMISSION_WAIT_CHOICES.to_vec();
+    if !pchoices.contains(&status.permission_wait_secs) { pchoices.push(status.permission_wait_secs); pchoices.sort(); }
+    for secs in pchoices {
+        perm_menu.append(&CheckMenuItem::with_id(app, format!("permission_wait:{secs}"), permission_wait_label(secs), true,
+            secs == status.permission_wait_secs, None::<&str>)?)?;
+    }
+
     let autostart_item = CheckMenuItem::with_id(app, "autostart:toggle",
         if dev_build { "Arrancar al iniciar sesión (solo en la app instalada)" } else { "Arrancar al iniciar sesión" },
         !dev_build, autostart && !dev_build, None::<&str>)?;
@@ -111,7 +124,7 @@ fn build_menu(app: &AppHandle, st: &App) -> tauri::Result<Menu<tauri::Wry>> {
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
         Box::new(status_item), Box::new(hooks_item), Box::new(PredefinedMenuItem::separator(app)?),
         Box::new(agents_menu), Box::new(PredefinedMenuItem::separator(app)?),
-        Box::new(pack_menu), Box::new(size_menu), Box::new(name_item), Box::new(wander_item), Box::new(wander_after), Box::new(autostart_item),
+        Box::new(pack_menu), Box::new(size_menu), Box::new(name_item), Box::new(wander_item), Box::new(wander_after), Box::new(perm_menu), Box::new(autostart_item),
         Box::new(PredefinedMenuItem::separator(app)?), Box::new(advanced), Box::new(quit),
     ];
     if let Some(w) = status.pack_warning.as_deref() {
@@ -163,6 +176,9 @@ fn on_menu(app: &AppHandle, id: &str) {
             else if let Some(s) = id.strip_prefix("size:") {
                 SpriteSize::parse(s).ok_or_else(|| format!("tamaño desconocido {s}")).and_then(|sz| commands::do_set_size(app, &st, sz))
             }
+            else if let Some(s) = id.strip_prefix("permission_wait:") {
+                s.parse::<u32>().map_err(|e| e.to_string()).and_then(|secs| commands::do_set_permission_wait(&st, secs))
+            }
             else if let Some(s) = id.strip_prefix("wander_after:") {
                 let enabled = st.config.lock().unwrap().wander;
                 s.parse::<u32>().map_err(|e| e.to_string()).and_then(|secs| commands::do_set_wander(&st, enabled, secs))
@@ -197,7 +213,7 @@ mod tests {
     use super::*;
     fn status(hooks: bool, poll: Option<&str>, server: Option<&str>) -> Status {
         Status { hooks_installed: hooks, poll_error: poll.map(Into::into), server_error: server.map(Into::into), pack_warning: None,
-            hook_url: "u".into(), token: "t".into(), pack: "default".into(), size: SpriteSize::Normal, wander: true, wander_after_secs: 20, show_name: true }
+            hook_url: "u".into(), token: "t".into(), pack: "default".into(), size: SpriteSize::Normal, wander: true, wander_after_secs: 20, show_name: true, permission_wait_secs: 60 }
     }
     #[test] fn tooltip_shows_first_warning() {
         assert_eq!(tooltip_text(None), "Buddy");
@@ -211,9 +227,11 @@ mod tests {
     #[test] fn labels() {
         assert_eq!(wander_after_label(20), "20 s");
         assert_eq!(wander_after_label(120), "2 min");
+        assert_eq!(permission_wait_label(0), "Nunca (siempre en el terminal)");
+        assert_eq!(permission_wait_label(30), "30 s");
         assert_eq!(size_label(SpriteSize::Large), "Grande");
         let v = AgentView { key: "h:s".into(), host: "h".into(), session_id: "s".into(), name: "buddy-1".into(), cwd: None, pid: None,
-            job_id: None, parent: None, visible: Visible::NeedsInput, waiting_for: None, peer: None, since_secs: 0 };
+            job_id: None, parent: None, permission: None, visible: Visible::NeedsInput, waiting_for: None, peer: None, since_secs: 0 };
         assert_eq!(agent_label(&v), "buddy-1 · necesita respuesta");
     }
 }

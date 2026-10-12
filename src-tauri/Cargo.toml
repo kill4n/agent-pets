@@ -18,7 +18,6 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "time"] }
 axum = "0.8"
 directories = "6"
-hostname = "0.4"
 rand = "0.9"
 png = "0.17"
 log = "0.4"
