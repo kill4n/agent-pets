@@ -1,3 +1,4 @@
+use crate::config::SpriteSize;
 use crate::packs::Manifest;
 use crate::state::agent_state::provisional_name;
 use crate::state::store::{AgentView, Change};
@@ -13,6 +14,13 @@ pub fn label_for(key: &str) -> String { format!("sprite-{}", key.replace([':', '
 pub const MIN_WINDOW_W: f64 = 220.0;
 /// Room above the sprite for the speech bubble and its tail.
 pub const BUBBLE_H: f64 = 84.0;
+
+/// The pack manifest with the user's size preference applied to its `scale`.
+pub fn effective_manifest(m: &Manifest, size: SpriteSize) -> Manifest {
+    let mut e = m.clone();
+    e.scale = size.apply(m.scale);
+    e
+}
 
 /// Window size while the bubble is closed: exactly the sprite, so clicks around it fall through.
 pub fn collapsed_size(m: &Manifest) -> (f64, f64) {
@@ -165,6 +173,20 @@ pub fn set_bubble(app: &AppHandle, label: &str, m: &Manifest, open: bool, placem
     Ok(())
 }
 
+/// Resize every sprite window from the `old` to the `new` effective manifest, keeping each sprite's
+/// top-left corner where it is. Locks are only touched to read the open flag.
+pub fn resize_all(app: &AppHandle, old: &Manifest, new: &Manifest, placement: &Mutex<Placement>) {
+    for (label, w) in app.webview_windows() {
+        if !label.starts_with("sprite-") { continue; }
+        let open = placement.lock().unwrap().is_open(&label);
+        let Some(cur) = current_pos(&w) else { continue };
+        let collapsed = collapsed_origin(open, cur, old);
+        let (pos, (sw, sh)) = rect_for(open, collapsed, new);
+        if let Err(e) = w.set_size(LogicalSize::new(sw, sh)) { log::warn!("resize {label}: {e}"); }
+        if let Err(e) = w.set_position(LogicalPosition::new(pos.x as f64, pos.y as f64)) { log::warn!("move {label}: {e}"); }
+    }
+}
+
 pub fn save_position(positions: &mut Positions, host: &str, name: &str, x: i32, y: i32) {
     positions.set(host, name, Pos { x, y });
 }
@@ -227,6 +249,13 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "name": "t", "frameSize": [frame, frame], "scale": scale, "animations": {}
         })).unwrap()
+    }
+
+    #[test] fn effective_manifest_applies_size_to_scale() {
+        let m = manifest(96, 2);
+        assert_eq!(effective_manifest(&m, SpriteSize::Small).scale, 1);
+        assert_eq!(effective_manifest(&m, SpriteSize::Large).scale, 3);
+        assert_eq!(collapsed_size(&effective_manifest(&m, SpriteSize::Small)), (96.0, 96.0));
     }
 
     #[test] fn collapsed_window_is_exactly_the_sprite() {
