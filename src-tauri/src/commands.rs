@@ -84,6 +84,14 @@ pub fn set_size(handle: AppHandle, app: State<Arc<App>>, size: String) -> Result
     Ok(())
 }
 
+/// Bring the terminal hosting this agent's session to the front (double-click on the sprite).
+#[tauri::command(async)]
+pub fn focus_terminal(app: State<Arc<App>>, key: String) -> Result<(), String> {
+    let pid = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key).and_then(|v| v.pid);
+    let pid = pid.ok_or("esta sesión no tiene un terminal asociado")?;
+    crate::focus::focus_pid(pid)
+}
+
 /// Open or close the speech bubble: the window grows/shrinks around the sprite.
 #[tauri::command(async)]
 pub fn set_bubble(handle: AppHandle, app: State<Arc<App>>, key: String, open: bool) -> Result<(), String> {

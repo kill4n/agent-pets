@@ -79,9 +79,20 @@ canvas.addEventListener("mousemove", (e) => {
     if (!mock) getCurrentWindow().startDragging().catch((err) => console.warn("startDragging failed", err));
   }
 });
+// A plain click toggles the bubble, but only after the double-click window has passed, so a
+// double click (focus the terminal) does not open and close the bubble on the way.
+let clickTimer: number | undefined;
 canvas.addEventListener("mouseup", () => {
-  if (downAt) void toggleBubble();
+  if (downAt) {
+    window.clearTimeout(clickTimer);
+    clickTimer = window.setTimeout(() => void toggleBubble(), 250);
+  }
   downAt = null;
+});
+canvas.addEventListener("dblclick", () => {
+  window.clearTimeout(clickTimer);
+  if (mock) return;
+  invoke("focus_terminal", { key }).catch((err) => console.warn("focus_terminal failed", err));
 });
 
 // The window is only as big as the sprite while the bubble is closed; ask Rust to grow it before
@@ -111,7 +122,7 @@ async function main() {
     const m: Manifest = await (await fetch("/assets-dev/pack.json")).json();
     for (const a of Object.values(m.animations)) a.loop ??= true; // Rust applies this serde default; raw pack.json omits it
     await loadManifest(m);
-    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj",
+    setView({ key: "mock", host: "local", session_id: "mock0000", name: "mock-agent", cwd: "/Users/me/proj", pid: null,
       visible: mock as AgentView["visible"], waiting_for: mock === "needs_input" ? "permission prompt" : null,
       peer: mock === "waiting_peer" ? "buddy-2" : null, since_secs: 0 });
     return;
