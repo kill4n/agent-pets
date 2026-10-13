@@ -56,3 +56,7 @@ Things to verify by eye (not automatable):
 - Tray menu.
 - Settings → **Connect to Claude Code** (hooks in `~/.claude/settings.json`) and a test with two real sessions.
 - Autostart.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
