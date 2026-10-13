@@ -237,7 +237,7 @@ order.forEach((state, row) => {
 
 mkdirSync("assets/packs/fox", { recursive: true });
 writeFileSync("assets/packs/fox/sheet.png", PNG.sync.write(png));
-const manifest = { name: "Zorro", frameSize: [F, F], scale: 2, animations: {} };
+const manifest = { name: "Fox", frameSize: [F, F], scale: 2, animations: {} };
 order.forEach((state, row) => {
   manifest.animations[state] = { sheet: "sheet.png", row, frames: frames[state], fps: fps[state], ...(state === "gone" ? { loop: false } : {}) };
 });
