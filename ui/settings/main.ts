@@ -23,7 +23,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 function render() {
-  const hooksBtn = el("button", status.hooks_installed ? "Desconectar" : "Conectar con Claude Code", { id: "hooks" });
+  const hooksBtn = el("button", status.hooks_installed ? "Disconnect" : "Connect to Claude Code", { id: "hooks" });
   hooksBtn.onclick = async () => {
     try { await invoke(status.hooks_installed ? "uninstall_hooks" : "install_hooks"); }
     catch (e) { alert(`Error: ${e}`); }
@@ -37,7 +37,7 @@ function render() {
     packSel.append(o);
   }
   packSel.onchange = async () => {
-    try { await invoke("set_pack", { name: packSel.value }); } catch (err) { alert(`Pack inválido: ${err}`); }
+    try { await invoke("set_pack", { name: packSel.value }); } catch (err) { alert(`Invalid pack: ${err}`); }
     await refresh();
   };
 
@@ -68,7 +68,7 @@ function render() {
   wanderAfter.onchange = saveWander;
 
   const list = el("ul");
-  if (agents.length === 0) list.append(el("li", "ninguno"));
+  if (agents.length === 0) list.append(el("li", "none"));
   for (const a of agents) {
     const li = el("li", undefined, {}, el("b", a.name), ` · ${a.visible}`);
     if (a.waiting_for) li.append(` (${a.waiting_for})`);
@@ -78,36 +78,36 @@ function render() {
   }
 
   const sizeSel = el("select", undefined, { id: "size" });
-  for (const [v, label] of [["small", "Pequeño"], ["normal", "Normal"], ["large", "Grande"]] as const) {
+  for (const [v, label] of [["small", "Small"], ["normal", "Normal"], ["large", "Large"]] as const) {
     const o = el("option", label, { value: v });
     o.selected = v === status.size;
     sizeSel.append(o);
   }
   sizeSel.onchange = async () => {
-    try { await invoke("set_size", { size: sizeSel.value }); } catch (err) { alert(`Tamaño inválido: ${err}`); }
+    try { await invoke("set_size", { size: sizeSel.value }); } catch (err) { alert(`Invalid size: ${err}`); }
     await refresh();
   };
 
   app.replaceChildren(
     el("h2", "Claude Code"),
     el("p", "Hooks: ", {},
-      el("span", status.hooks_installed ? "instalados" : "no instalados", { class: status.hooks_installed ? "ok" : "bad" }),
+      el("span", status.hooks_installed ? "installed" : "not installed", { class: status.hooks_installed ? "ok" : "bad" }),
       " ", hooksBtn),
     el("p", "Poll: ", {},
       status.poll_error ? el("span", `⚠ ${status.poll_error}`, { class: "warn" }) : el("span", "ok", { class: "ok" })),
-    el("p", "Servidor: ", {}, el("code", status.hook_url), " ",
+    el("p", "Server: ", {}, el("code", status.hook_url), " ",
       status.server_error ? el("span", `⚠ ${status.server_error}`, { class: "warn" }) : el("span", "ok", { class: "ok" }),
       el("br"), "Token: ", el("code", status.token)),
     el("h2", "Sprites"),
     el("label", "Pack ", {}, packSel),
-    el("label", "Tamaño ", {}, sizeSel),
-    el("label", undefined, {}, showName, " Mostrar nombre de la sesión"),
-    el("label", undefined, {}, wander, " Pasear cuando están inactivos"),
-    el("label", "Empezar a pasear tras ", {}, wanderAfter, " segundos inactivo"),
+    el("label", "Size ", {}, sizeSel),
+    el("label", undefined, {}, showName, " Show session name"),
+    el("label", undefined, {}, wander, " Wander when idle"),
+    el("label", "Start wandering after ", {}, wanderAfter, " seconds idle"),
     ...(status.pack_warning ? [el("p", `⚠ ${status.pack_warning}`, { class: "warn" })] : []),
-    el("h2", "Sistema"),
-    el("label", undefined, {}, auto, " Arrancar al iniciar sesión"),
-    el("h2", `Agentes (${agents.length})`),
+    el("h2", "System"),
+    el("label", undefined, {}, auto, " Launch at login"),
+    el("h2", `Agents (${agents.length})`),
     list,
   );
 }

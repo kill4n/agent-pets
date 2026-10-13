@@ -75,16 +75,16 @@ pub fn load_initial_pack(root: &Path, pack: &str) -> (Option<Manifest>, String, 
         Err(e) if pack != "default" => {
             log::warn!("pack {pack} invalid ({e}), falling back to default");
             match load_pack(&root.join("default")) {
-                Ok(m) => (Some(m), "default".into(), Some(format!("pack {pack} inválido, usando default"))),
+                Ok(m) => (Some(m), "default".into(), Some(format!("pack {pack} is invalid, using default"))),
                 Err(e2) => {
                     log::error!("default pack invalid too ({e2}); sprites disabled");
-                    (None, pack.to_string(), Some(format!("ningún pack válido en {}", root.display())))
+                    (None, pack.to_string(), Some(format!("no valid pack in {}", root.display())))
                 }
             }
         }
         Err(e) => {
             log::error!("default pack invalid ({e}); sprites disabled");
-            (None, pack.to_string(), Some(format!("pack default inválido en {}", root.display())))
+            (None, pack.to_string(), Some(format!("default pack is invalid in {}", root.display())))
         }
     }
 }
@@ -141,7 +141,7 @@ pub fn run() {
                     Ok(a) => log::info!("hooks server on {a}"),
                     Err(e) => {
                         log::error!("hooks server failed to bind {addr}: {e}");
-                        st2.server_error.send_replace(Some(format!("servidor de hooks no pudo usar {addr}: {e}")));
+                        st2.server_error.send_replace(Some(format!("hooks server could not bind {addr}: {e}")));
                     }
                 }
             });

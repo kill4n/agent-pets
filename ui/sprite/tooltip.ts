@@ -1,8 +1,8 @@
 import type { AgentView } from "../shared/types";
 
 const LABEL: Record<string, string> = {
-  working: "trabajando", idle: "idle", needs_input: "necesita tu respuesta",
-  delegating: "delegando a subagentes", waiting_peer: "esperando a otro agente", gone: "terminó",
+  working: "working", idle: "idle", needs_input: "needs your input",
+  delegating: "delegating to subagents", waiting_peer: "waiting for another agent", gone: "done",
 };
 
 export function shortCwd(cwd: string | null): string {
@@ -45,10 +45,10 @@ export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDec
     what.textContent = summary ? `${tool}: ${summary}` : tool;
     const actions = document.createElement("div");
     actions.className = "actions";
-    const truncated = summary.endsWith("[… truncado: decide en el terminal]");
+    const truncated = summary.endsWith("[… truncated: decide in the terminal]");
     const choices = truncated
-      ? ([["Denegar", "deny", "bad"], ["En el terminal", "terminal", ""]] as const)
-      : ([["Permitir", "allow", "ok"], ["Denegar", "deny", "bad"], ["En el terminal", "terminal", ""]] as const);
+      ? ([["Deny", "deny", "bad"], ["In the terminal", "terminal", ""]] as const)
+      : ([["Allow", "allow", "ok"], ["Deny", "deny", "bad"], ["In the terminal", "terminal", ""]] as const);
     for (const [label, d, cls] of choices) {
       const b = document.createElement("button");
       b.textContent = label; b.className = cls; b.type = "button";

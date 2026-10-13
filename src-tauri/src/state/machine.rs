@@ -40,7 +40,7 @@ pub fn apply_hook(s: &mut AgentState, h: &HookEvent, now: Instant) {
         }
         "Stop" => if s.sent_message { Visible::WaitingPeer } else { Visible::Idle },
         "PermissionRequest" => {
-            s.permission = Some((h.tool_name.clone().unwrap_or_else(|| "herramienta".into()), h.tool_summary.clone().unwrap_or_default()));
+            s.permission = Some((h.tool_name.clone().unwrap_or_else(|| "tool".into()), h.tool_summary.clone().unwrap_or_default()));
             Visible::NeedsInput
         }
         "Notification" => {
