@@ -85,7 +85,7 @@ pub fn generate_token() -> String {
 pub fn config_dir() -> PathBuf {
     directories::ProjectDirs::from("dev", "kill4n", "codepets")
         .map(|p| p.config_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from(".buddy"))
+        .unwrap_or_else(|| PathBuf::from(".codepets"))
 }
 pub fn config_path() -> PathBuf { config_dir().join("config.json") }
 pub fn positions_path() -> PathBuf { config_dir().join("positions.json") }

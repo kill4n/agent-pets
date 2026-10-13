@@ -52,7 +52,7 @@ export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDec
     for (const [label, d, cls] of choices) {
       const b = document.createElement("button");
       b.textContent = label; b.className = cls; b.type = "button";
-      b.addEventListener("mousedown", (e) => { e.stopPropagation(); (window as any).__buddyLog?.("mousedown " + d); });
+      b.addEventListener("mousedown", (e) => { e.stopPropagation(); (window as any).__codepetsLog?.("mousedown " + d); });
       b.addEventListener("mouseup", (e) => e.stopPropagation());
       b.addEventListener("click", (e) => { e.stopPropagation(); onDecide(d); });
       actions.append(b);

@@ -1,5 +1,5 @@
-# SDD ledger — plan: doc/plans/2026-10-09-buddy-v1.md
-Branch: buddy-v1 (from 1839041). Spec: doc/specs/2026-10-07-buddy-design.md (readable).
+# SDD ledger — plan: doc/plans/2026-10-09-codepets-v1.md
+Branch: buddy-v1 (from 1839041). Spec: doc/specs/2026-10-07-codepets-design.md (readable).
 
 ## Preflight scan
 | Pair / Task | Produces vs consumes | Found |

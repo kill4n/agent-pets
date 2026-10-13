@@ -13,7 +13,7 @@ const mock = params.get("mock");
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const tip = document.getElementById("tip") as HTMLDivElement;
 const nameEl = document.getElementById("name") as HTMLDivElement;
-(window as any).__buddyLog = (m: string) => uiLog(m);
+(window as any).__codepetsLog = (m: string) => uiLog(m);
 // diagnostics: which element receives presses inside this window
 document.addEventListener("mousedown", (e) => {
   const t = e.target as HTMLElement | null;

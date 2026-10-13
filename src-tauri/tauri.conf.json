@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Buddy",
+  "productName": "CodePets",
   "version": "0.1.2",
   "identifier": "dev.kill4n.codepets",
   "build": {

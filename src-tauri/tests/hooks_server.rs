@@ -1,5 +1,5 @@
-use buddy_lib::collector::event::EventKind;
-use buddy_lib::collector::hooks_server::{serve, Parked};
+use codepets_lib::collector::event::EventKind;
+use codepets_lib::collector::hooks_server::{serve, Parked};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -50,7 +50,7 @@ async fn permission_request_is_held_then_answered_or_released() {
     let answer = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(p2.is_parked("h:s"));
-        p2.answer("h:s", buddy_lib::collector::hooks_server::Decision::Allow)
+        p2.answer("h:s", codepets_lib::collector::hooks_server::Decision::Allow)
     });
     let r = c.post(format!("http://{addr}/hook")).bearer_auth("tok").json(&body).send().await.unwrap();
     assert_eq!(r.status(), 200);

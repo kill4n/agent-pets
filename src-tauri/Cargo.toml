@@ -1,11 +1,11 @@
 [package]
-name = "buddy"
+name = "codepets"
 version = "0.1.2"
 edition = "2021"
 license = "MIT"
 
 [lib]
-name = "buddy_lib"
+name = "codepets_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
