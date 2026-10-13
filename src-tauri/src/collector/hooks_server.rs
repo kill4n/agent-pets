@@ -40,7 +40,7 @@ impl Parked {
 pub fn permission_response(d: Option<Decision>) -> serde_json::Value {
     match d {
         Some(Decision::Allow) => serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}),
-        Some(Decision::Deny) => serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "Denegado desde Buddy"}}}),
+        Some(Decision::Deny) => serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "Denied from Buddy"}}}),
         Some(Decision::Terminal) | None => serde_json::json!({}),
     }
 }

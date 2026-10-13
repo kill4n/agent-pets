@@ -73,15 +73,15 @@ fn ps_lookup(pid: u32) -> Option<(u32, String)> {
 pub fn focus_session(pid: Option<u32>, job_id: Option<&str>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let bundle = terminal_bundle(pid, job_id, &sessions_dir()).ok_or("no se encontró la app del terminal")?;
+        let bundle = terminal_bundle(pid, job_id, &sessions_dir()).ok_or("terminal app not found")?;
         let st = Command::new("open").arg(&bundle).status().map_err(|e| e.to_string())?;
-        return if st.success() { Ok(()) } else { Err(format!("open {} falló", bundle.display())) };
+        return if st.success() { Ok(()) } else { Err(format!("open {} failed", bundle.display())) };
     }
     #[cfg(target_os = "linux")]
     {
         // best effort: find the first ancestor that owns an X window and activate it
         let start = pid.or_else(|| job_id.and_then(|j| parked_client_pid(&sessions_dir(), j)))
-            .ok_or("esta sesión no tiene un terminal asociado")?;
+            .ok_or("this session has no terminal attached")?;
         let mut p = start;
         for _ in 0..32 {
             let win = Command::new("xdotool").args(["search", "--pid", &p.to_string(), "--limit", "1"]).output()
@@ -89,16 +89,16 @@ pub fn focus_session(pid: Option<u32>, job_id: Option<&str>) -> Result<(), Strin
             let id = String::from_utf8_lossy(&win.stdout).trim().to_string();
             if !id.is_empty() {
                 let st = Command::new("xdotool").args(["windowactivate", &id]).status().map_err(|e| e.to_string())?;
-                return if st.success() { Ok(()) } else { Err("xdotool windowactivate falló".into()) };
+                return if st.success() { Ok(()) } else { Err("xdotool windowactivate failed".into()) };
             }
             let Some((pp, _)) = ps_lookup(p) else { break };
             if pp <= 1 { break; }
             p = pp;
         }
-        return Err("no se encontró la ventana del terminal".into());
+        return Err("terminal window not found".into());
     }
     #[allow(unreachable_code)]
-    { let _ = (pid, job_id); Err("enfocar el terminal no está soportado en este sistema".into()) }
+    { let _ = (pid, job_id); Err("focusing the terminal is not supported on this OS".into()) }
 }
 
 #[cfg(test)]

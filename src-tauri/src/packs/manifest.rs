@@ -177,7 +177,7 @@ mod tests {
         let m = load_pack(&root.join("default")).expect("default pack must validate");
         assert_eq!(m.name, "Slime");
         let m = load_pack(&root.join("fox")).expect("fox pack must validate");
-        assert_eq!(m.name, "Zorro");
+        assert_eq!(m.name, "Fox");
         assert_eq!(list_packs(&root), vec!["default".to_string(), "fox".to_string()]);
     }
 

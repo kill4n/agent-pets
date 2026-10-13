@@ -20,7 +20,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 **C1. Every sprite window receives every agent's state, so with two or more sessions all sprites show the same agent.**
 - Where: `src-tauri/src/windows/manager.rs:27` and `ui/sprite/main.ts:96`.
 - What's wrong: `push_state` calls `w.emit("agent-state", v)` on a `WebviewWindow`. In Tauri 2, `Emitter::emit` "Emits an event to all targets" whatever object it is called on (verified at tauri-2.12.2 `src/lib.rs:962-978`; `impl Emitter for WebviewWindow {}` uses that default). On the JS side, `listen()` defaults to `{ kind: 'Any' }` (`@tauri-apps/api/event.js:138`). `setView(e.payload)` never checks `payload.key === key`.
-- Why it matters: every sprite flips to the name, state and tooltip of whichever agent changed last. This breaks the core promise (spec section 1, "saber qué agente necesita atención"). Task 14's headless curl check could not catch it, and no test covers the emission target.
+- Why it matters: every sprite flips to the name, state and tooltip of whichever agent changed last. This breaks the core promise (spec section 1, "know which agent needs attention"). Task 14's headless curl check could not catch it, and no test covers the emission target.
 - Fix: in the manager use `app.emit_to(EventTarget::webview_window(label), "agent-state", v)` (or `w.emit_to(&label, ...)`). In `main.ts`, also guard with `if (e.payload.key !== key) return;` as defence in depth.
 
 **C2. A bundled build cannot find its packs, and the default-pack `expect` then panics at startup.**
@@ -49,7 +49,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 **I1. Saved positions are never applied to new sessions when hooks are installed.**
 - Where: `src-tauri/src/windows/manager.rs:34-36` and `commands.rs:38-42`.
 - What's wrong: with hooks installed, `SessionStart` reaches the app before the next poll (up to 2.5 s later). The agent is created with the provisional name `session_id[:8]`, and `ensure_window` looks up `positions[host:abcdef12]`, finds nothing, and cascades. When the poll renames the agent to its real name, `ensure_window` returns early because the window exists, so the saved `host+name` position is never used. A drag made before the rename is also saved under the throwaway provisional key, which then accumulates in positions.json forever.
-- Why it matters: spec section 6.1 says the initial position is the last known one for that `host + name`, and the README says "la posición se recuerda". Restarting Buddy with live sessions masks the bug because the first poll fires before any hook.
+- Why it matters: spec section 6.1 says the initial position is the last known one for that `host + name`, and the README says "its position is remembered". Restarting Buddy with live sessions masks the bug because the first poll fires before any hook.
 - Fix: on `Change::Updated` where the name changed, if `positions.get(host, new_name)` exists and the user has not dragged the window yet, `set_position` to it. In `report_position`, ignore drags while the name is still provisional, or re-key on rename. Add a test.
 
 **I2. A lost SubagentStop leaves the sprite in Delegating permanently.**
@@ -79,7 +79,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 **I5. Collector failures are invisible, and a second instance duplicates every sprite.**
 - Where: `src-tauri/src/lib.rs:72-79,53`, `tray.rs:7-24` and `commands.rs:48-54`.
 - What's wrong:
-  - If port 7433 is busy, `serve` only logs. `get_status` has no field for it, so the settings window reports "Hooks: instalados, Poll: ok" while every hook is refused.
+  - If port 7433 is busy, `serve` only logs. `get_status` has no field for it, so the settings window reports "Hooks: installed, Poll: ok" while every hook is refused.
   - There is no single-instance guard. Autostart plus a manual launch runs two Buddies: the second cannot bind, but it still polls and opens a second sprite for every session.
   - Spec sections 3.1, 5 and 8 require a tray warning for collector/poller errors and for pack fallback. The tray never changes, and pack fallback is only `log::warn`.
 - Fix:
@@ -98,7 +98,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 
 - **M1.** `commands.rs:72-87`: `set_pack` sends the new manifest but never resizes existing windows. A pack with a different `frameSize`/`scale` renders clipped until the session restarts. Call `set_size` on each `sprite-*` window.
 - **M2.** `manager.rs:11` and `ui/sprite/main.ts:72`: the 56 px transparent strip under each sprite blocks clicks to whatever is beneath it and is not draggable. The spec says the whole surface is a drag region. Make the whole body draggable, and toggle `set_ignore_cursor_events` or shrink the window when the tooltip is hidden.
-- **M3.** `config.rs:21-26` and `commands.rs:52`: a corrupt or hand-edited config.json silently generates a new token. Installed hooks keep the old token and get 401 on every call, but `is_installed` matches by URL only and still reports "instalados". Compare the Authorization header too, and show "token desactualizado — reconectar".
+- **M3.** `config.rs:21-26` and `commands.rs:52`: a corrupt or hand-edited config.json silently generates a new token. Installed hooks keep the old token and get 401 on every call, but `is_installed` matches by URL only and still reports "installed". Compare the Authorization header too, and show "token out of date — reconnect".
 - **M4.** `positions.rs:19-25`: the write is not atomic, and stale provisional keys are never pruned (see I1). Use temp file plus rename, like the installer.
 - **M5.** `store.rs:84-94`: `mark_missed` ignores recent hooks. A session that sends hooks but is not listed by `claude agents` (headless `claude -p`, if not listed) flaps between Gone and Working every 5 s and may get its window recreated. Skip `mark_missed` while `last_hook_at` is under 5 s old.
 - **M6.** `store.rs:55-65`: a late hook for an already-swept session (for example a duplicated SessionEnd) re-creates the agent and opens a window. The C3 tombstone covers this.
@@ -113,7 +113,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
   - No mention of `BUDDY_CLAUDE_BIN` or the GUI PATH caveat (I3).
   - No `cargo tauri build`/bundle instructions.
   - No Linux tray prerequisites (libayatana-appindicator).
-  - "la posición se recuerda" is currently untrue for new sessions (I1).
+  - "its position is remembered" is currently untrue for new sessions (I1).
 
 ## Deferred-minor triage
 
