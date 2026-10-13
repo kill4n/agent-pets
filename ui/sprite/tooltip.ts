@@ -19,18 +19,24 @@ export function fmtSince(s: number): string {
 
 export type Decision = "allow" | "deny" | "terminal";
 
-export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDecide?: (d: Decision) => void) {
+/// Builds the bubble once and returns an updater for the elapsed time, so the DOM (and its buttons)
+/// is not rebuilt every frame: a button replaced between mousedown and mouseup never gets its click.
+export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDecide?: (d: Decision) => void): (sinceOffset: number) => void {
   const detail = v.visible === "needs_input" && v.waiting_for ? ` (${v.waiting_for})`
                : v.visible === "waiting_peer" && v.peer ? ` → ${v.peer}` : "";
   const b = document.createElement("b");
   b.textContent = v.name;
+  const stateLine = `${LABEL[v.visible] ?? v.visible}${detail} · `;
+  const since = document.createTextNode(fmtSince(v.since_secs + sinceOffset));
   el.replaceChildren(
     b,
     document.createElement("br"),
     document.createTextNode(shortCwd(v.cwd)),
     document.createElement("br"),
-    document.createTextNode(`${LABEL[v.visible] ?? v.visible}${detail} · ${fmtSince(v.since_secs + sinceOffset)}`),
+    document.createTextNode(stateLine),
+    since,
   );
+  const update = (off: number) => { since.textContent = fmtSince(v.since_secs + off); };
   if (v.permission && onDecide) {
     const [tool, summary] = v.permission;
     const ask = document.createElement("div");
@@ -46,7 +52,7 @@ export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDec
     for (const [label, d, cls] of choices) {
       const b = document.createElement("button");
       b.textContent = label; b.className = cls; b.type = "button";
-      b.addEventListener("mousedown", (e) => e.stopPropagation());
+      b.addEventListener("mousedown", (e) => { e.stopPropagation(); (window as any).__buddyLog?.("mousedown " + d); });
       b.addEventListener("mouseup", (e) => e.stopPropagation());
       b.addEventListener("click", (e) => { e.stopPropagation(); onDecide(d); });
       actions.append(b);
@@ -54,4 +60,5 @@ export function render(el: HTMLElement, v: AgentView, sinceOffset: number, onDec
     ask.append(what, actions);
     el.append(ask);
   }
+  return update;
 }

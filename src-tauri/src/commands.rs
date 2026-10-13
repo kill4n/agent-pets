@@ -134,11 +134,17 @@ pub fn do_set_wander(app: &App, enabled: bool, after_secs: u32) -> Result<(), St
     Ok(())
 }
 
+/// Diagnostics from the webviews (they have no visible console in release builds).
+#[tauri::command]
+pub fn ui_log(msg: String) { log::debug!("ui: {msg}"); }
+
 /// Answer a permission prompt held for this agent: "allow" | "deny" | "terminal".
 #[tauri::command]
 pub fn answer_permission(app: State<Arc<App>>, key: String, decision: String) -> Result<(), String> {
     let d = crate::collector::hooks_server::Decision::parse(&decision).ok_or_else(|| format!("decisión desconocida: {decision}"))?;
-    if !app.parked.answer(&key, d) { return Err("ese permiso ya no está pendiente".into()); }
+    let delivered = app.parked.answer(&key, d);
+    log::info!("answer_permission {key}: {d:?} delivered={delivered}");
+    if !delivered { return Err("ese permiso ya no está pendiente".into()); }
     Ok(())
 }
 
