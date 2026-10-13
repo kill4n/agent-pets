@@ -71,7 +71,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Buddy ${{ github.ref_name }}"
+          releaseName: "CodePets ${{ github.ref_name }}"
           releaseBody: "Builds for macOS (Apple Silicon and Intel), Windows and Linux. macOS builds are unsigned unless signing secrets are configured: use Control-click → Open on first launch."
           releaseDraft: false
           prerelease: false

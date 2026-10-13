@@ -44,9 +44,9 @@ Download the installer for your platform from the [latest release](https://githu
 
 | Platform | File |
 | --- | --- |
-| macOS (Apple Silicon) | `Buddy_<version>_aarch64.dmg` |
-| macOS (Intel) | `Buddy_<version>_x64.dmg` |
-| Windows | `Buddy_<version>_x64-setup.exe` or `.msi` |
+| macOS (Apple Silicon) | `CodePets_<version>_aarch64.dmg` |
+| macOS (Intel) | `CodePets_<version>_x64.dmg` |
+| Windows | `CodePets_<version>_x64-setup.exe` or `.msi` |
 | Linux | `.AppImage`, `.deb` or `.rpm` |
 
 The macOS builds are not notarized yet: on first launch use Control-click → Open.
@@ -61,7 +61,7 @@ Requirements: Claude Code 2.1.224 or newer (`claude agents --json` must exist).
 
 Everything else is in the same menu: pack, size, labels, wandering, how long a permission prompt is held for the bubble, launch at login, and the list of agents (click one to focus its terminal).
 
-If Buddy reports that it cannot find `claude` (common when launched from the Dock, which has a minimal `PATH`), set `claude_path` in the config file (`~/Library/Application Support/dev.kill4n.codepets/config.json` on macOS, `~/.config/codepets/config.json` on Linux) or the `BUDDY_CLAUDE_BIN` environment variable.
+If Buddy reports that it cannot find `claude` (common when launched from the Dock, which has a minimal `PATH`), set `claude_path` in the config file (`~/Library/Application Support/dev.kill4n.codepets/config.json` on macOS, `~/.config/codepets/config.json` on Linux) or the `CODEPETS_CLAUDE_BIN` environment variable.
 
 ## How it works
 
@@ -79,7 +79,7 @@ Claude Code ◀─poll every 2.5s── `claude agents --json --all`
 - Permission prompts: the `PermissionRequest` hook is held open until you answer in the bubble or the configured wait expires, in which case Claude Code shows its own prompt as usual. Inputs too long to display cannot be approved from the bubble.
 - Nothing leaves your machine. The server binds to localhost only unless you enable `bind_all`.
 
-Design and engineering records live in [`doc/`](doc/): the [spec](doc/specs/2026-10-07-buddy-design.md), the implementation plan and the final review.
+Design and engineering records live in [`doc/`](doc/): the [spec](doc/specs/2026-10-07-codepets-design.md), the implementation plan and the final review.
 
 ## Sprite packs
 
