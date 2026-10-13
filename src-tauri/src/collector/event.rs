@@ -33,7 +33,7 @@ pub struct HookEvent {
 /// Longest tool input the bubble will show. Anything longer is marked truncated and the bubble
 /// refuses to approve it: the user must see exactly what they allow.
 pub const TOOL_SUMMARY_MAX: usize = 2000;
-pub const TRUNCATED_MARK: &str = "\n[… truncado: decide en el terminal]";
+pub const TRUNCATED_MARK: &str = "\n[… truncated: decide in the terminal]";
 
 /// The text describing a tool call for the bubble: the Bash command verbatim (newlines kept), a
 /// path, or the compact JSON input. Ends with `TRUNCATED_MARK` when cut.

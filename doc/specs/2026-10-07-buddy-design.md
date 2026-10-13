@@ -1,64 +1,64 @@
-# Buddy — Desktop pet para sesiones de Claude Code
+# Buddy — Desktop pet for Claude Code sessions
 
-Fecha: 2026-10-07
-Estado: borrador para revisión
+Date: 2026-10-07
+Status: draft for review
 
-## 1. Objetivo
+## 1. Goal
 
-Buddy es una app de escritorio con ventanas transparentes que muestra un sprite animado
-por cada sesión de Claude Code activa en la máquina. El sprite cambia de animación según
-el estado del agente para que, de un vistazo y sin cambiar de ventana, se sepa qué agente
-está trabajando, cuál está inactivo, cuál necesita atención del usuario y cuál espera a
-otro agente.
+Buddy is a desktop app with transparent windows that shows one animated sprite for each
+active Claude Code session on the machine. The sprite changes animation according to the
+agent's state so that, at a glance and without switching windows, you can tell which agent
+is working, which is idle, which needs the user's attention and which is waiting for
+another agent.
 
-**Para quién:** el propio usuario, con varias sesiones de Claude Code abiertas a la vez.
+**Who it is for:** the user themself, with several Claude Code sessions open at once.
 
-**Éxito:** mirar la pantalla y saber qué agente necesita atención sin tocar nada.
+**Success:** look at the screen and know which agent needs attention without touching anything.
 
-## 2. Decisiones tomadas
+## 2. Decisions made
 
-| Tema | Decisión |
+| Topic | Decision |
 |---|---|
-| Stack | Tauri 2 (Rust + WebView), multiplataforma (macOS, Windows, Linux). |
-| Multi-PC | Diseñado para ello (campo `host`, token, `bind_all`), no implementado en v1. |
-| Relación sprite/sesión | Un sprite por sesión, pasivo: anima según estado, click muestra tooltip. |
-| Assets | Packs de sprites por manifiesto JSON. Pack placeholder `default` incluido. |
-| Ventanas | Una ventana Tauri transparente por sprite, arrastrable, posición persistida. |
-| Fuente de estado | Híbrido: hooks HTTP de Claude Code (push) + poll de `claude agents --json --all`. |
+| Stack | Tauri 2 (Rust + WebView), cross-platform (macOS, Windows, Linux). |
+| Multi-PC | Designed for it (`host` field, token, `bind_all`), not implemented in v1. |
+| Sprite/session relationship | One sprite per session, passive: animates by state, click shows a tooltip. |
+| Assets | Sprite packs described by a JSON manifest. Placeholder pack `default` included. |
+| Windows | One transparent, draggable Tauri window per sprite, position persisted. |
+| State source | Hybrid: Claude Code HTTP hooks (push) + poll of `claude agents --json --all`. |
 
-## 3. Arquitectura
+## 3. Architecture
 
 ```
 hook http ──► hooks_server ─┐
-                            ├─► AgentEvent ─► state ─► cambio ─► windows ─► UI (sprite)
+                            ├─► AgentEvent ─► state ─► change ─► windows ─► UI (sprite)
 claude agents --json ─► poller ┘
 ```
 
-### 3.1 Core (Rust, proceso Tauri)
+### 3.1 Core (Rust, Tauri process)
 
-- **collector**: normaliza ambas fuentes a `AgentEvent`.
-  - `hooks_server`: HTTP en `127.0.0.1:7433` (configurable). `POST /hook` con
-    `Authorization: Bearer <token>`. Responde `200` vacío en < 50 ms; el procesamiento
-    va a una cola interna. `GET /health` para que el instalador compruebe la app.
-  - `poller`: cada 2.5 s ejecuta `claude agents --json --all` (timeout 2 s), parsea y emite
-    un evento `Snapshot` con la lista completa.
-  - `event.rs`: traducción pura de JSON de hook y de poll a `AgentEvent`.
-- **state**: máquina de estados por agente (sección 4). Única fuente de verdad.
-- **windows**: observa `state`. Crea una ventana por agente nuevo, cierra las de agentes
-  `gone` tras 10 s de gracia, persiste posiciones en el directorio de configuración de la
-  app (`positions.json`) indexadas por `host + name`.
-- **installer**: añade o quita el bloque de hooks en `~/.claude/settings.json` (sección 6).
-- **packs**: parseo y validación de manifiestos de sprites (sección 5).
-- **config**: puerto, token, pack activo, `bind_all` (false por defecto), autoarranque.
+- **collector**: normalizes both sources into `AgentEvent`.
+  - `hooks_server`: HTTP on `127.0.0.1:7433` (configurable). `POST /hook` with
+    `Authorization: Bearer <token>`. Responds with an empty `200` in < 50 ms; processing
+    goes to an internal queue. `GET /health` lets the installer check the app.
+  - `poller`: every 2.5 s runs `claude agents --json --all` (2 s timeout), parses it and emits
+    a `Snapshot` event with the full list.
+  - `event.rs`: pure translation from hook JSON and poll JSON to `AgentEvent`.
+- **state**: per-agent state machine (section 4). Single source of truth.
+- **windows**: observes `state`. Creates a window for each new agent, closes the windows of
+  `gone` agents after a 10 s grace period, persists positions in the app's configuration
+  directory (`positions.json`) keyed by `host + name`.
+- **installer**: adds or removes the hooks block in `~/.claude/settings.json` (section 6).
+- **packs**: parsing and validation of sprite manifests (section 5).
+- **config**: port, token, active pack, `bind_all` (false by default), autostart.
 
-### 3.2 UI (web, Vite + TypeScript, sin framework pesado)
+### 3.2 UI (web, Vite + TypeScript, no heavy framework)
 
-- **sprite**: una ventana por agente. Recibe `AgentState` por evento Tauri, reproduce la
-  animación del pack. Canvas 2D con `imageSmoothingEnabled = false`.
-- **settings**: ventana desde icono de bandeja.
-- **shared**: tipos compartidos con el core.
+- **sprite**: one window per agent. Receives `AgentState` via a Tauri event and plays the
+  pack's animation. Canvas 2D with `imageSmoothingEnabled = false`.
+- **settings**: window opened from the tray icon.
+- **shared**: types shared with the core.
 
-### 3.3 Tipos principales
+### 3.3 Main types
 
 ```rust
 struct AgentEvent { host: String, session_id: String, kind: EventKind, at: Instant }
@@ -81,31 +81,31 @@ struct AgentState { id: AgentId /* host + session_id */, name: String, cwd: Path
 enum Visible { Working, Idle, NeedsInput, Delegating, WaitingPeer, Gone }
 ```
 
-## 4. Máquina de estados
+## 4. State machine
 
-Prioridad entre fuentes: un hook recibido hace menos de 5 s gana sobre el poll; pasado ese
-tiempo manda el poll. `delegating` tiene prioridad sobre `working` mientras `subagents > 0`.
-`waiting_peer` es inferido; si el poll reporta `waiting` con `waitingFor`, ese dato gana.
+Priority between sources: a hook received less than 5 s ago wins over the poll; after that
+time the poll rules. `delegating` takes priority over `working` while `subagents > 0`.
+`waiting_peer` is inferred; if the poll reports `waiting` with `waitingFor`, that data wins.
 
-| Visible | Entra con | Sale con |
+| Visible | Entered by | Left by |
 |---|---|---|
-| `working` | hook `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (tool ≠ SendMessage); poll `status: busy` o `state: working` | cualquier otro evento |
-| `idle` | hook `Stop`; poll `status: idle` | `UserPromptSubmit` o `busy` |
-| `needs_input` | hook `PermissionRequest`; `Notification` con `permission_prompt`, `elicitation_dialog` o `idle_prompt`; poll `status: waiting` (guarda `waitingFor`); background `state: blocked` | `UserPromptSubmit`, `PostToolUse`, poll `busy` |
-| `delegating` | `SubagentStart` (subagents += 1) | `SubagentStop` deja subagents en 0 |
-| `waiting_peer` | `PostToolUse` con `tool_name == "SendMessage"` (guarda destinatario) seguido de `Stop` o poll `idle` | `UserPromptSubmit` o poll `busy` |
-| `gone` | `SessionEnd`; ausente del poll en 2 ciclos consecutivos; background `done`, `failed`, `stopped` | reaparece el mismo `session_id` dentro del tiempo de gracia (se cancela el cierre) |
+| `working` | hook `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (tool ≠ SendMessage); poll `status: busy` or `state: working` | any other event |
+| `idle` | hook `Stop`; poll `status: idle` | `UserPromptSubmit` or `busy` |
+| `needs_input` | hook `PermissionRequest`; `Notification` with `permission_prompt`, `elicitation_dialog` or `idle_prompt`; poll `status: waiting` (stores `waitingFor`); background `state: blocked` | `UserPromptSubmit`, `PostToolUse`, poll `busy` |
+| `delegating` | `SubagentStart` (subagents += 1) | `SubagentStop` brings subagents to 0 |
+| `waiting_peer` | `PostToolUse` with `tool_name == "SendMessage"` (stores the recipient) followed by `Stop` or poll `idle` | `UserPromptSubmit` or poll `busy` |
+| `gone` | `SessionEnd`; absent from the poll for 2 consecutive cycles; background `done`, `failed`, `stopped` | the same `session_id` reappears within the grace period (the close is cancelled) |
 
-Reglas adicionales:
-- Un agente que llega por hook antes de aparecer en el poll se crea con nombre provisional
-  `session_id[:8]` y `cwd` del hook; el poll lo completa con `name`.
-- `since` se reinicia solo cuando cambia `visible`.
-- Un evento malformado se descarta y se registra; nunca cambia el estado.
+Additional rules:
+- An agent that arrives via hook before appearing in the poll is created with the provisional
+  name `session_id[:8]` and the hook's `cwd`; the poll completes it with `name`.
+- `since` is reset only when `visible` changes.
+- A malformed event is discarded and logged; it never changes the state.
 
-## 5. Packs de sprites
+## 5. Sprite packs
 
-Carpeta `assets/packs/<nombre>/` con `pack.json` y uno o más PNG (spritesheets en
-cuadrícula, una fila por animación).
+Folder `assets/packs/<name>/` with `pack.json` and one or more PNGs (spritesheets in a
+grid, one row per animation).
 
 ```json
 {
@@ -123,71 +123,71 @@ cuadrícula, una fila por animación).
 }
 ```
 
-- Las seis animaciones son obligatorias. `loop` es `true` por defecto.
-- El core valida el pack al cargar (campos presentes, PNG existentes, dimensiones
-  múltiplo de `frameSize`). Si falla, usa `default` y avisa en la bandeja.
-- El pack `default` lo generamos nosotros: pixel art simple, distinguible por estado
-  (trabajando: tecleando; idle: durmiendo; needs_input: signo de exclamación; delegating:
-  mini-clones; waiting_peer: mirando un reloj; gone: desvanecimiento).
+- All six animations are required. `loop` defaults to `true`.
+- The core validates the pack on load (fields present, PNGs exist, dimensions are a
+  multiple of `frameSize`). If validation fails, it falls back to `default` and warns in the tray.
+- We generate the `default` pack ourselves: simple pixel art, distinguishable by state
+  (working: typing; idle: sleeping; needs_input: exclamation mark; delegating:
+  mini-clones; waiting_peer: looking at a clock; gone: fading away).
 
-## 6. Ventanas y UI
+## 6. Windows and UI
 
-### 6.1 Ventana de sprite
-- Tamaño `frameSize × scale` más margen para el tooltip. Transparente, sin decoraciones,
-  always-on-top, oculta de barra de tareas y alt-tab.
-- Toda la superficie es región de arrastre. Al soltar, la UI envía la posición al core.
-- Click sin arrastre alterna el tooltip: nombre, `cwd` abreviado, estado, `waitingFor` o
-  destinatario del peer, y tiempo en ese estado.
-- Posición inicial: la última conocida para ese `host + name`; si no hay, en cascada desde
-  la esquina inferior derecha del monitor principal.
-- Modo `?mock=<estado>` para revisión visual sin Claude Code.
+### 6.1 Sprite window
+- Size `frameSize × scale` plus a margin for the tooltip. Transparent, undecorated,
+  always-on-top, hidden from the taskbar and alt-tab.
+- The whole surface is a drag region. On release, the UI sends the position to the core.
+- A click without dragging toggles the tooltip: name, abbreviated `cwd`, state, `waitingFor` or
+  the peer's recipient, and time spent in that state.
+- Initial position: the last known one for that `host + name`; if none, cascaded from
+  the bottom-right corner of the primary monitor.
+- `?mock=<state>` mode for visual review without Claude Code.
 
-### 6.2 Ventana de ajustes (bandeja)
-- Conectar/desconectar hooks, con indicador de instalados.
-- Selector de pack.
-- Lista de agentes activos con estado.
-- Puerto y token del servidor.
-- Arrancar al iniciar sesión.
-- Icono de advertencia si collector o poller reportan errores.
+### 6.2 Settings window (tray)
+- Connect/disconnect hooks, with an installed indicator.
+- Pack selector.
+- List of active agents with their state.
+- Server port and token.
+- Launch at login.
+- Warning icon if the collector or poller report errors.
 
-## 7. Integración con Claude Code
+## 7. Claude Code integration
 
-### 7.1 Hooks que instala el instalador
+### 7.1 Hooks installed by the installer
 
-Eventos: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
 `Stop`, `PermissionRequest`, `Notification`, `SubagentStart`, `SubagentStop`.
 
-Entrada por evento:
+Entry per event:
 
 ```json
 { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7433/hook",
               "headers": { "Authorization": "Bearer <token>" }, "timeout": 2 }] }
 ```
 
-### 7.2 Reglas del instalador
-- Copia de seguridad `settings.json.buddy-backup` antes de escribir.
-- Fusiona: añade nuestra entrada al array del evento; nunca borra entradas ajenas.
-- Nuestras entradas se identifican por la URL; desinstalar es filtrar por esa URL.
-- `timeout` corto para no frenar a Claude Code si la app no está abierta.
+### 7.2 Installer rules
+- Backup `settings.json.buddy-backup` before writing.
+- Merges: adds our entry to the event's array; never deletes entries that are not ours.
+- Our entries are identified by the URL; uninstalling means filtering by that URL.
+- Short `timeout` so Claude Code is not slowed down if the app is not open.
 
 ### 7.3 Poller
-- Si `claude` no está en el PATH o la salida no parsea: registra una vez, muestra
-  advertencia, reintenta el siguiente ciclo. La app sigue con hooks solamente.
+- If `claude` is not on the PATH or the output does not parse: log once, show a
+  warning, retry on the next cycle. The app keeps going with hooks only.
 
-### 7.4 Preparación multi-PC (no implementado en v1)
-- `host` se rellena con el hostname local.
-- `bind_all` apagado por defecto; al encenderlo el servidor escucha en `0.0.0.0`.
-- El token ya viaja en cabecera. Un PC remoto apuntaría sus hooks a esta IP.
-- El poll remoto requeriría un reporter en la otra máquina (fuera de alcance).
+### 7.4 Multi-PC groundwork (not implemented in v1)
+- `host` is filled with the local hostname.
+- `bind_all` is off by default; when turned on, the server listens on `0.0.0.0`.
+- The token already travels in a header. A remote PC would point its hooks at this IP.
+- Remote polling would require a reporter on the other machine (out of scope).
 
-## 8. Manejo de errores
+## 8. Error handling
 
-- Fallos en collector o poller: log + icono de advertencia en bandeja. Nunca cierran la app.
-- Evento malformado: se descarta.
-- Pack inválido: se usa `default`.
-- `settings.json` inválido al instalar: no se escribe, se muestra el error.
+- Collector or poller failures: log + warning icon in the tray. They never close the app.
+- Malformed event: discarded.
+- Invalid pack: `default` is used.
+- Invalid `settings.json` on install: nothing is written, the error is shown.
 
-## 9. Estructura del proyecto
+## 9. Project structure
 
 ```
 buddy/
@@ -210,22 +210,22 @@ buddy/
   releases/
 ```
 
-La carpeta `api` existente no se usa y se elimina.
+The existing `api` folder is unused and is removed.
 
-## 10. Pruebas
+## 10. Testing
 
-- Rust unitarias: `state::machine` (tabla `(estado, evento) → estado`), `packs::manifest`
-  (válidos e inválidos), `installer` (fusión y desinstalación sobre JSON de ejemplo),
-  `collector::event` (JSON de hook y de poll → `AgentEvent`).
-- Integración: `hooks_server` en puerto libre, enviar un hook grabado, verificar cambio en
+- Rust unit tests: `state::machine` (`(state, event) → state` table), `packs::manifest`
+  (valid and invalid), `installer` (merge and uninstall on sample JSON),
+  `collector::event` (hook and poll JSON → `AgentEvent`).
+- Integration: `hooks_server` on a free port, send a recorded hook, verify the change in
   `state`.
-- UI: revisión visual manual con `?mock`.
-- Manual final: dos sesiones de Claude Code, un `SendMessage` entre ellas, verificar los
-  seis estados.
+- UI: manual visual review with `?mock`.
+- Final manual check: two Claude Code sessions, a `SendMessage` between them, verify all
+  six states.
 
-## 11. Alcance
+## 11. Scope
 
-**v1:** todo lo anterior.
+**v1:** everything above.
 
-**Fuera de v1:** multi-PC, click para enfocar el terminal, enviar mensajes desde el sprite,
-sonidos, posiciones por monitor en multi-monitor.
+**Out of v1:** multi-PC, click to focus the terminal, sending messages from the sprite,
+sounds, per-monitor positions in multi-monitor setups.

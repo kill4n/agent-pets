@@ -126,7 +126,7 @@ pub fn set_wander(handle: AppHandle, app: State<Arc<App>>, enabled: bool, after_
 }
 
 pub fn do_set_wander(app: &App, enabled: bool, after_secs: u32) -> Result<(), String> {
-    if !(5..=3600).contains(&after_secs) { return Err("el tiempo debe estar entre 5 y 3600 segundos".into()); }
+    if !(5..=3600).contains(&after_secs) { return Err("the delay must be between 5 and 3600 seconds".into()); }
     let mut cfg = app.config.lock().unwrap();
     cfg.wander = enabled;
     cfg.wander_after_secs = after_secs;
@@ -141,10 +141,10 @@ pub fn ui_log(msg: String) { log::debug!("ui: {msg}"); }
 /// Answer a permission prompt held for this agent: "allow" | "deny" | "terminal".
 #[tauri::command]
 pub fn answer_permission(app: State<Arc<App>>, key: String, decision: String) -> Result<(), String> {
-    let d = crate::collector::hooks_server::Decision::parse(&decision).ok_or_else(|| format!("decisión desconocida: {decision}"))?;
+    let d = crate::collector::hooks_server::Decision::parse(&decision).ok_or_else(|| format!("unknown decision: {decision}"))?;
     let delivered = app.parked.answer(&key, d);
     log::info!("answer_permission {key}: {d:?} delivered={delivered}");
-    if !delivered { return Err("ese permiso ya no está pendiente".into()); }
+    if !delivered { return Err("that permission is no longer pending".into()); }
     Ok(())
 }
 
@@ -155,7 +155,7 @@ pub fn set_permission_wait(handle: AppHandle, app: State<Arc<App>>, secs: u32) -
 }
 
 pub fn do_set_permission_wait(app: &App, secs: u32) -> Result<(), String> {
-    if secs > 600 { return Err("máximo 600 segundos".into()); }
+    if secs > 600 { return Err("600 seconds maximum".into()); }
     { let mut cfg = app.config.lock().unwrap(); cfg.permission_wait_secs = secs; if let Err(e) = cfg.save(&config_path()) { log::warn!("cannot save config: {e}"); } }
     *app.permission_wait.lock().unwrap() = std::time::Duration::from_secs(secs as u64);
     Ok(())
@@ -167,10 +167,10 @@ pub fn focus_terminal(app: State<Arc<App>>, key: String) -> Result<(), String> {
 
 pub fn do_focus_terminal(app: &App, key: &str) -> Result<(), String> {
     let views = app.store.lock().unwrap().views(Instant::now());
-    let mut view = views.iter().find(|v| v.key == key).cloned().ok_or("sesión desconocida")?;
+    let mut view = views.iter().find(|v| v.key == key).cloned().ok_or("unknown session")?;
     // a subagent sprite focuses its parent's terminal
-    if let Some(parent) = &view.parent { view = views.iter().find(|v| &v.key == parent).cloned().ok_or("sesión padre desconocida")?; }
-    if view.pid.is_none() && view.job_id.is_none() { return Err("esta sesión no tiene un terminal asociado".into()); }
+    if let Some(parent) = &view.parent { view = views.iter().find(|v| &v.key == parent).cloned().ok_or("unknown parent session")?; }
+    if view.pid.is_none() && view.job_id.is_none() { return Err("this session has no terminal attached".into()); }
     let r = crate::focus::focus_session(view.pid, view.job_id.as_deref());
     if let Err(e) = &r { log::warn!("focus_terminal {}: {e}", view.name); }
     r
@@ -180,7 +180,7 @@ pub fn do_focus_terminal(app: &App, key: &str) -> Result<(), String> {
 #[tauri::command(async)]
 pub fn set_bubble(handle: AppHandle, app: State<Arc<App>>, key: String, open: bool) -> Result<(), String> {
     let manifest = app.manifest.lock().unwrap().clone().ok_or("no pack loaded")?;
-    let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key).ok_or("sesión desconocida")?;
+    let view = app.store.lock().unwrap().views(Instant::now()).into_iter().find(|v| v.key == key).ok_or("unknown session")?;
     let label = label_for_view(&view);
     let m = manifest_for_label(&manifest, &label);
     crate::windows::manager::set_bubble(&handle, &label, &m, open, &app.placement)
