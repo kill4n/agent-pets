@@ -4,8 +4,8 @@
 
 ![Several Buddy sprites on a desktop: working, needs input with a speech bubble, delegating to a subagent, a fox waiting for a peer, and an idle slime](docs/images/hero.png)
 
-[![Release](https://img.shields.io/github/v/release/kill4n/agent-pets?label=release)](https://github.com/kill4n/agent-pets/releases/latest)
-[![CI](https://github.com/kill4n/agent-pets/actions/workflows/ci.yml/badge.svg)](https://github.com/kill4n/agent-pets/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kill4n/codepets?label=release)](https://github.com/kill4n/codepets/releases/latest)
+[![CI](https://github.com/kill4n/codepets/actions/workflows/ci.yml/badge.svg)](https://github.com/kill4n/codepets/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Why
@@ -40,7 +40,7 @@ Prefer a fox? Packs are swappable from the menu, and you can draw your own.
 
 ## Install
 
-Download the installer for your platform from the [latest release](https://github.com/kill4n/agent-pets/releases/latest):
+Download the installer for your platform from the [latest release](https://github.com/kill4n/codepets/releases/latest):
 
 | Platform | File |
 | --- | --- |
