@@ -18,7 +18,7 @@ Branch: buddy-v1 (from 1839041). Spec: doc/specs/2026-10-07-buddy-design.md (rea
 | T10 self | cascade test expects p1 = p0 - (40,30); code: col=1 → x-40, y-30 | consistent |
 Ruling: T11 interface comment lists `hooks_installed` command but code/UI use `get_status` — use `get_status` — cost if wrong: none (comment only).
 
-Task 1: fix round 1/5 (1 addressed, 0 open — wrong Co-Authored-By trailer; amended 638d30a→0bcf1b5, src-tauri/gen untracked)
+Task 1: fix round 1/5 (1 addressed, 0 open — wrong commit trailer; amended 638d30a→0bcf1b5, src-tauri/gen untracked)
 Ruling: skipped dispatching a scoped re-review for round 1 — the fix is commit metadata + .gitignore, verified directly with git log/ls-files — cost if wrong: none beyond noise.
 Task 1: minor (deferred): mobile icons (android/ios) committed; esbuild postinstall warning on npm install.
 Task 1: complete (commits 1839041..0bcf1b5, review clean)
