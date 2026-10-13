@@ -178,7 +178,7 @@ pub fn run() {
             commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal, commands::set_wander, commands::set_show_name, commands::answer_permission, commands::set_permission_wait, commands::ui_log
         ])
         .build(tauri::generate_context!())
-        .expect("error while building buddy")
+        .expect("error while building codepets")
         .run(|_app, event| {
             // keep running with no windows (tray app); an explicit app.exit(code) still quits
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {

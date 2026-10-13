@@ -439,28 +439,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "buddy"
-version = "0.1.2"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "directories",
- "env_logger",
- "log",
- "png 0.17.16",
- "rand",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -620,6 +598,28 @@ dependencies = [
  "num-traits",
  "serde",
  "windows-link",
+]
+
+[[package]]
+name = "codepets"
+version = "0.1.2"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "directories",
+ "env_logger",
+ "log",
+ "png 0.17.16",
+ "rand",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-single-instance",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

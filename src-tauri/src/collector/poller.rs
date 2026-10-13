@@ -21,10 +21,10 @@ impl std::fmt::Display for PollError {
 const SHELL_LOOKUP_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Find the `claude` binary. GUI/LaunchAgent processes on macOS get a minimal PATH, so a bare
-/// `claude` usually fails. Order: config override, `$BUDDY_CLAUDE_BIN`, the login shell's
+/// `claude` usually fails. Order: config override, `$CODEPETS_CLAUDE_BIN`, the login shell's
 /// `command -v claude`, known install locations, then plain `"claude"`.
 pub fn resolve_claude_bin(config_override: Option<&str>) -> String {
-    resolve_from(config_override, std::env::var("BUDDY_CLAUDE_BIN").ok(), shell_lookup, &known_locations())
+    resolve_from(config_override, std::env::var("CODEPETS_CLAUDE_BIN").ok(), shell_lookup, &known_locations())
 }
 
 fn resolve_from(config_override: Option<&str>, env: Option<String>, shell: impl FnOnce() -> Option<String>,

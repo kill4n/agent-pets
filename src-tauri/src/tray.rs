@@ -164,7 +164,7 @@ fn on_menu(app: &AppHandle, id: &str) {
             let (enabled, secs) = { let c = st.config.lock().unwrap(); (c.wander, c.wander_after_secs) };
             commands::do_set_wander(&st, !enabled, secs)
         }
-        "autostart:toggle" if cfg!(debug_assertions) => Err("the dev build cannot launch at login: install Buddy.app".into()),
+        "autostart:toggle" if cfg!(debug_assertions) => Err("the dev build cannot launch at login: install CodePets.app".into()),
         "autostart:toggle" => {
             let al = app.autolaunch();
             let r = if al.is_enabled().unwrap_or(false) { al.disable() } else { al.enable() };

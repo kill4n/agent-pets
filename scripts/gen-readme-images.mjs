@@ -126,11 +126,11 @@ function desktopBackground(img) {
     if (extra) extra(cx, y);
   };
   put(slime, "working", 2, 150, "api-server", S);
-  put(slime, "needs_input", 2, 400, "buddy-34", S, (cx, y) => bubble(img, ["BUDDY-34", "NEEDS YOUR INPUT", "BASH: RM -RF BUILD"], cx, y - 4, 2));
+  put(slime, "needs_input", 2, 400, "pets-34", S, (cx, y) => bubble(img, ["PETS-34", "NEEDS YOUR INPUT", "BASH: RM -RF BUILD"], cx, y - 4, 2));
   put(slime, "delegating", 3, 630, "pipeline", S);
   put(slime, "working", 5, 745, "explore", 1);   // subagent: half size, hugging its parent
   put(fox, "waiting_peer", 1, 910, "docs-site", 3);
-  put(slime, "idle", 1, 1090, "buddy-dev", S);
+  put(slime, "idle", 1, 1090, "pets-dev", S);
   text(img, "ONE SPRITE PER CLAUDE CODE SESSION", 24, 20, [235, 235, 245], 3);
   text(img, "WORKING . NEEDS INPUT . DELEGATING . WAITING FOR A PEER . IDLE", 24, 52, [160, 168, 200], 2);
   writeFileSync(`${OUT}/hero.png`, PNG.sync.write(img));

@@ -89,14 +89,14 @@ fn write_with_backup(path: &Path, value: &Value) -> Result<(), InstallError> {
     let target = if path.is_symlink() { std::fs::canonicalize(path)? } else { path.to_path_buf() };
     let name = target.file_name().unwrap().to_string_lossy().into_owned();
     if target.exists() {
-        let backup = target.with_file_name(format!("{name}.buddy-backup"));
+        let backup = target.with_file_name(format!("{name}.codepets-backup"));
         if !backup.exists() { std::fs::copy(&target, &backup)?; }
     } else if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
-    let tmp = target.with_file_name(format!("{name}.buddy-tmp"));
+    let tmp = target.with_file_name(format!("{name}.codepets-tmp"));
     std::fs::write(&tmp, text)?;
     #[cfg(unix)]
     {
@@ -186,7 +186,7 @@ mod tests {
         let p = d.path().join("settings.json");
         std::fs::write(&p, r#"{"model":"fable"}"#).unwrap();
         install(&p, URL, "tok").unwrap();
-        let backup = std::fs::read_to_string(d.path().join("settings.json.buddy-backup")).unwrap();
+        let backup = std::fs::read_to_string(d.path().join("settings.json.codepets-backup")).unwrap();
         assert_eq!(backup, r#"{"model":"fable"}"#);
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert!(is_installed(&v, URL));
@@ -216,7 +216,7 @@ mod tests {
         let p = d.path().join("settings.json");
         std::fs::write(&p, r#"{"model":"fable"}"#).unwrap();
         install(&p, URL, "tok").unwrap();
-        assert!(!d.path().join("settings.json.buddy-tmp").exists());
+        assert!(!d.path().join("settings.json.codepets-tmp").exists());
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert!(is_installed(&v, URL));
     }
@@ -250,7 +250,7 @@ mod tests {
         std::fs::write(&p, r#"{"model":"orig"}"#).unwrap();
         install(&p, URL, "a").unwrap();
         install(&p, URL, "b").unwrap();
-        let backup = std::fs::read_to_string(d.path().join("settings.json.buddy-backup")).unwrap();
+        let backup = std::fs::read_to_string(d.path().join("settings.json.codepets-backup")).unwrap();
         assert_eq!(backup, r#"{"model":"orig"}"#);
     }
 

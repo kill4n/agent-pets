@@ -1,2 +1,2 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-fn main() { buddy_lib::run() }
+fn main() { codepets_lib::run() }
