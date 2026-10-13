@@ -204,6 +204,8 @@ fn ensure_window(app: &AppHandle, v: &AgentView, manifest: &Manifest, positions:
         .title(&v.name).inner_size(w, h).position(pos.x as f64, pos.y as f64)
         .transparent(true).decorations(false).always_on_top(true).skip_taskbar(true)
         .resizable(false).shadow(false).visible_on_all_workspaces(true)
+        // macOS: act on the first click even when the window is not key (buttons in the bubble)
+        .accept_first_mouse(true)
         .build();
     match built {
         Ok(_) => placement.lock().unwrap().created(&label, &v.name),
