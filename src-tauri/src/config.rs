@@ -83,7 +83,7 @@ pub fn generate_token() -> String {
 }
 
 pub fn config_dir() -> PathBuf {
-    directories::ProjectDirs::from("dev", "crhistian", "buddy")
+    directories::ProjectDirs::from("dev", "kill4n", "codepets")
         .map(|p| p.config_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from(".buddy"))
 }

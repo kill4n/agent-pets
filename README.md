@@ -61,7 +61,7 @@ Requirements: Claude Code 2.1.224 or newer (`claude agents --json` must exist).
 
 Everything else is in the same menu: pack, size, labels, wandering, how long a permission prompt is held for the bubble, launch at login, and the list of agents (click one to focus its terminal).
 
-If Buddy reports that it cannot find `claude` (common when launched from the Dock, which has a minimal `PATH`), set `claude_path` in the config file (`~/Library/Application Support/dev.crhistian.buddy/config.json` on macOS, `~/.config/buddy/config.json` on Linux) or the `BUDDY_CLAUDE_BIN` environment variable.
+If Buddy reports that it cannot find `claude` (common when launched from the Dock, which has a minimal `PATH`), set `claude_path` in the config file (`~/Library/Application Support/dev.kill4n.codepets/config.json` on macOS, `~/.config/codepets/config.json` on Linux) or the `BUDDY_CLAUDE_BIN` environment variable.
 
 ## How it works
 
