@@ -13,6 +13,17 @@ const mock = params.get("mock");
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const tip = document.getElementById("tip") as HTMLDivElement;
 const nameEl = document.getElementById("name") as HTMLDivElement;
+(window as any).__buddyLog = (m: string) => uiLog(m);
+// diagnostics: which element receives presses inside this window
+document.addEventListener("mousedown", (e) => {
+  const t = e.target as HTMLElement | null;
+  uiLog(`doc mousedown on <${t?.tagName?.toLowerCase()} id=${t?.id ?? ""} class=${t?.className ?? ""}> at ${e.clientX},${e.clientY} tip=${tipVisible}`);
+}, true);
+document.addEventListener("click", (e) => {
+  const t = e.target as HTMLElement | null;
+  uiLog(`doc click on <${t?.tagName?.toLowerCase()} id=${t?.id ?? ""} class=${t?.className ?? ""}>`);
+}, true);
+window.addEventListener("load", () => uiLog(`loaded ${innerWidth}x${innerHeight}`));
 const ctx2d = canvas.getContext("2d");
 if (!ctx2d) throw new Error("2d context unavailable");
 const ctx: CanvasRenderingContext2D = ctx2d;
@@ -54,11 +65,16 @@ async function doLoadManifest(m: Manifest) {
 
 // permission prompts open the bubble by themselves and close it again once answered
 let autoOpened = false;
+function uiLog(msg: string) { if (!mock) invoke("ui_log", { msg: `${key}: ${msg}` }).catch(() => {}); }
 function decide(d: Decision) {
+  uiLog(`decide ${d}`);
   if (!view) return;
-  invoke("answer_permission", { key: view.key, decision: d }).catch((err) => console.warn("answer_permission failed", err));
+  invoke("answer_permission", { key: view.key, decision: d })
+    .then(() => uiLog(`answer_permission ${d} ok`))
+    .catch((err) => { console.warn("answer_permission failed", err); uiLog(`answer_permission failed: ${err}`); });
 }
-function paintTip(v: AgentView, since: number) { renderTip(tip, v, since, decide); }
+let tipUpdate: ((since: number) => void) | null = null;
+function paintTip(v: AgentView, since: number) { tipUpdate = renderTip(tip, v, since, decide); }
 
 function setView(v: AgentView) {
   const hadPermission = !!view?.permission;
@@ -81,7 +97,7 @@ function frame(now: number) {
     ctx.clearRect(0, 0, fw, fh);
     if (img?.complete) ctx.drawImage(img, sx, sy, fw, fh, 0, 0, fw, fh);
   }
-  if (tipVisible && view) paintTip(view, Math.floor((now - viewAt) / 1000));
+  if (tipVisible && view && tipUpdate) tipUpdate(Math.floor((now - viewAt) / 1000));
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

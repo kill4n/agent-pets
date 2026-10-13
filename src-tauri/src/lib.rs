@@ -175,7 +175,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_manifest, commands::get_pack_url, commands::report_position, commands::list_agents,
             commands::get_status, commands::install_hooks, commands::uninstall_hooks, commands::list_pack_names,
-            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal, commands::set_wander, commands::set_show_name, commands::answer_permission, commands::set_permission_wait
+            commands::set_pack, commands::get_config, commands::set_bubble, commands::set_size, commands::focus_terminal, commands::set_wander, commands::set_show_name, commands::answer_permission, commands::set_permission_wait, commands::ui_log
         ])
         .build(tauri::generate_context!())
         .expect("error while building buddy")
