@@ -80,6 +80,9 @@ pub async fn poll_once(host: &str, bin: &str) -> Result<AgentEvent, PollError> {
     let mut cmd = tokio::process::Command::new(bin);
     cmd.args(["agents", "--json", "--all"]).kill_on_drop(true)
         .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+    // CREATE_NO_WINDOW: without it Windows flashes a console window on every poll
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
     let child = cmd.spawn().map_err(PollError::Spawn)?;
     let out = tokio::time::timeout(POLL_TIMEOUT, child.wait_with_output()).await
         .map_err(|_| PollError::Timeout)?.map_err(PollError::Spawn)?;
