@@ -8,7 +8,7 @@ Security tab). You will get an acknowledgement within a few days.
 
 ## Scope notes
 
-- Buddy runs a local HTTP server (`127.0.0.1:7433` by default) that receives Claude
+- CodePets runs a local HTTP server (`127.0.0.1:7433` by default) that receives Claude
   Code hooks. Requests must carry the bearer token stored in the app's config
   file (owner-only permissions). `bind_all` is off by default; enabling it exposes the
   server to your network.

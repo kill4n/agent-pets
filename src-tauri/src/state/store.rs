@@ -17,7 +17,7 @@ pub struct AgentView {
     pub job_id: Option<String>,
     /// Key of the parent agent when this sprite is a subagent.
     pub parent: Option<String>,
-    /// Permission prompt held by Buddy: tool name and a one-line summary of its input.
+    /// Permission prompt held by CodePets: tool name and a one-line summary of its input.
     pub permission: Option<(String, String)>,
     pub visible: Visible,
     pub waiting_for: Option<String>,

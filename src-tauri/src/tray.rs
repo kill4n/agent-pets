@@ -27,7 +27,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().cloned().expect("icon"))
         .icon_as_template(true)
-        .tooltip("Buddy")
+        .tooltip("CodePets")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, ev| on_menu(app, ev.id.as_ref()))
@@ -192,7 +192,7 @@ fn on_menu(app: &AppHandle, id: &str) {
 
 /// Tooltip text: the first active warning, if any.
 pub fn tooltip_text(warning: Option<&str>) -> String {
-    match warning { Some(w) => format!("Buddy — ⚠ {w}"), None => "Buddy".into() }
+    match warning { Some(w) => format!("CodePets — ⚠ {w}"), None => "CodePets".into() }
 }
 
 pub fn open_settings(app: &AppHandle) {
@@ -202,7 +202,7 @@ pub fn open_settings(app: &AppHandle) {
         return;
     }
     let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings/index.html".into()))
-        .title("Buddy")
+        .title("CodePets")
         .inner_size(420.0, 520.0)
         .resizable(true)
         .build();
@@ -216,8 +216,8 @@ mod tests {
             hook_url: "u".into(), token: "t".into(), pack: "default".into(), size: SpriteSize::Normal, wander: true, wander_after_secs: 20, show_name: true, permission_wait_secs: 60 }
     }
     #[test] fn tooltip_shows_first_warning() {
-        assert_eq!(tooltip_text(None), "Buddy");
-        assert_eq!(tooltip_text(Some("cannot run claude")), "Buddy — ⚠ cannot run claude");
+        assert_eq!(tooltip_text(None), "CodePets");
+        assert_eq!(tooltip_text(Some("cannot run claude")), "CodePets — ⚠ cannot run claude");
     }
     #[test] fn status_line_reports_hooks_and_the_most_severe_collector_error() {
         assert_eq!(status_line(&status(true, None, None)), "Hooks: installed · poll ok");
