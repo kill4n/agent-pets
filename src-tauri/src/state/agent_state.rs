@@ -22,7 +22,7 @@ pub struct AgentState {
     pub job_id: Option<String>,
     /// Key of the parent agent when this is a subagent sprite.
     pub parent: Option<String>,
-    /// A permission prompt Buddy is holding for this session: (tool, summary).
+    /// A permission prompt CodePets is holding for this session: (tool, summary).
     pub permission: Option<(String, String)>,
     pub visible: Visible,
     pub waiting_for: Option<String>,

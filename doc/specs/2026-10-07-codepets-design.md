@@ -1,11 +1,11 @@
-# Buddy — Desktop pet for Claude Code sessions
+# CodePets — Desktop pet for Claude Code sessions
 
 Date: 2026-10-07
 Status: draft for review
 
 ## 1. Goal
 
-Buddy is a desktop app with transparent windows that shows one animated sprite for each
+CodePets is a desktop app with transparent windows that shows one animated sprite for each
 active Claude Code session on the machine. The sprite changes animation according to the
 agent's state so that, at a glance and without switching windows, you can tell which agent
 is working, which is idle, which needs the user's attention and which is waiting for

@@ -49,7 +49,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 **I1. Saved positions are never applied to new sessions when hooks are installed.**
 - Where: `src-tauri/src/windows/manager.rs:34-36` and `commands.rs:38-42`.
 - What's wrong: with hooks installed, `SessionStart` reaches the app before the next poll (up to 2.5 s later). The agent is created with the provisional name `session_id[:8]`, and `ensure_window` looks up `positions[host:abcdef12]`, finds nothing, and cascades. When the poll renames the agent to its real name, `ensure_window` returns early because the window exists, so the saved `host+name` position is never used. A drag made before the rename is also saved under the throwaway provisional key, which then accumulates in positions.json forever.
-- Why it matters: spec section 6.1 says the initial position is the last known one for that `host + name`, and the README says "its position is remembered". Restarting Buddy with live sessions masks the bug because the first poll fires before any hook.
+- Why it matters: spec section 6.1 says the initial position is the last known one for that `host + name`, and the README says "its position is remembered". Restarting CodePets with live sessions masks the bug because the first poll fires before any hook.
 - Fix: on `Change::Updated` where the name changed, if `positions.get(host, new_name)` exists and the user has not dragged the window yet, `set_position` to it. In `report_position`, ignore drags while the name is still provisional, or re-key on rename. Add a test.
 
 **I2. A lost SubagentStop leaves the sprite in Delegating permanently.**
@@ -134,7 +134,7 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 - T4 sheet path not guarded against `..`: CAN WAIT. The read boundary (`get_pack_url`) now refuses it; see M12 for the UX side.
 - T4 pack.json trailing newline: CAN WAIT.
 - T5 (security) settings.json/backup written with default perms: ALREADY FIXED. Confirmed: temp file plus rename at 0600 (`settings_json.rs:92-99`), test `install_writes_owner_only_permissions`. The backup is a `fs::copy` of the original and keeps the original's mode, which is acceptable.
-- T5 whole-group removal when a foreign hook shares our group: CAN WAIT. Buddy always writes its own group, so this only happens if the user hand-merges.
+- T5 whole-group removal when a foreign hook shares our group: CAN WAIT. CodePets always writes its own group, so this only happens if the user hand-merges.
 - T5 Display is Debug-based: CAN WAIT (see M13).
 - T5 untested CLAUDE_CONFIG_DIR: CAN WAIT.
 - T5 tmp file briefly at umask perms before chmod: CAN WAIT. It lives inside the user-owned `~/.claude`, and the window is milliseconds.
@@ -177,13 +177,13 @@ Reviewer passes: (1) spec, plan Global Constraints and Review Focus, ledger; (2)
 ## Declined to judge
 
 - `waiting_peer` lingering after an agent sends a reply (not a request) and stops: the spec defines SendMessage followed by Stop as `waiting_peer`. That is a product decision, not a defect.
-- Error noise or latency in Claude Code when Buddy is closed but hooks are installed: this is Claude Code's behaviour. The spec chose `timeout: 2` to limit it.
+- Error noise or latency in Claude Code when CodePets is closed but hooks are installed: this is Claude Code's behaviour. The spec chose `timeout: 2` to limit it.
 - Whether Claude Code's `http` hook type, the `PermissionRequest`/`SubagentStart` event names, and the `claude agents --json --all` field names exist exactly as written: these are external contracts the spec asserts and cannot be verified offline. C3 states its one dependency on them explicitly.
 - Multi-monitor and per-monitor DPI positioning: spec section 11 puts it outside v1.
 - Multi-PC (remote hooks and remote poll): outside v1. Only the preparation (`host`, token, `bind_all`) is required, and it exists.
 - Click to focus the terminal, sending messages, sounds: outside v1.
 - Visual quality of the generated default pack and the six `?mock=` pages: a manual visual check handed to the user (ledger Task 12/14).
-- One-time backup rather than a backup before every write: ruled in the ledger (Task 5) as safer against overwriting the original with a Buddy-modified copy.
+- One-time backup rather than a backup before every write: ruled in the ledger (Task 5) as safer against overwriting the original with a CodePets-modified copy.
 - No "status" push event to settings (polling `get_status` every 3 s instead): ruled in the ledger (Task 11).
 - Cascade-index race for two agents added in one batch: a known trade-off accepted in the plan's self-review.
 - Commit attribution trailer: ruled in the ledger (Task 14).
